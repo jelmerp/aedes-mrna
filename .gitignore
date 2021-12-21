@@ -1,0 +1,14 @@
+data/
+software/
+misc/
+slurm-*
+results/
+logs/
+sandbox/
+*sandbox*
+*html
+*_cache
+*fastq
+*fastq.gz
+.Rproj.user
+refdata/
