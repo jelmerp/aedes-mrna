@@ -1,12 +1,12 @@
-run_GO_wrap <- function(contrast_name, DE_res, GO_map, gene_lens) {
-  DE_vec <- get_DE_vec(contrast_name, DE_res)
-  GO_res <- run_GO(contrast_name, DE_vec, GO_map, gene_lens)
+run_GO_wrap <- function(fcontrast, DE_res, GO_map, gene_lens) {
+  DE_vec <- get_DE_vec(fcontrast, DE_res)
+  GO_df <- run_GO(fcontrast, DE_vec, GO_map, gene_lens)
 }
 
 ## Create named vector of DE genes
-get_DE_vec <- function(contrast_name, DE_res) {
+get_DE_vec <- function(fcontrast, DE_res) {
   DE_foc <- DE_res %>%
-    filter(contrast == contrast_name,
+    filter(contrast == fcontrast,
            !is.na(padj)) %>%   # Exclude genes with NA adj-p-val - not tested
     mutate(sig = ifelse(padj < 0.05, 1, 0))
 
@@ -17,11 +17,11 @@ get_DE_vec <- function(contrast_name, DE_res) {
 }
 
 ## Function to run GO analysis
-run_GO <- function(contrast_name, DE_vec, GO_map, gene_lens) {
+run_GO <- function(fcontrast, DE_vec, GO_map, gene_lens) {
 
   if(sum(DE_vec > 0)) {
     ## Remove rows from gene length df not in the DE_vec
-    gene_lens_final <- filter(gene_lens, gene_id %in% names(DE_vec))
+    gene_lens_final <- gene_lens %>% filter(gene_id %in% names(DE_vec))
 
     ## Remove elements from DE_vec not among the gene lengths
     DE_vec_final <- DE_vec[names(DE_vec) %in% gene_lens_final$gene_id]
@@ -34,31 +34,31 @@ run_GO <- function(contrast_name, DE_vec, GO_map, gene_lens) {
     )
 
     ## Run GO test
-    GO_res <- goseq(pwf = pwf, gene2cat = GO_map, method = "Wallenius")
+    GO_df <- goseq(pwf = pwf, gene2cat = GO_map, method = "Wallenius")
 
     ## Process GO results
-    GO_res <- GO_res %>%
+    GO_df <- GO_df %>%
       filter(numDEInCat > 0) %>%    # P-adjustment only for genes that were actually tested
       mutate(padj = p.adjust(over_represented_pvalue, method = "BH"),
-             contrast = contrast_name) %>%
+             contrast = fcontrast) %>%
       select(contrast, padj, numDEInCat, numInCat, category, ontology,
              description = term)
 
-    n_sig <- nrow(filter(GO_res, padj < 0.05))
-    cat("\n--------------\nRan comparison for:", contrast_name, "\n")
+    n_sig <- nrow(filter(GO_df, padj < 0.05))
+    cat("\n--------------\nRan comparison for:", fcontrast, "\n")
     cat("## Number of significant DE genes:", sum(DE_vec), "\n")
     cat("## Number of significant GO categories:", n_sig, "\n")
 
-    return(GO_res)
+    return(GO_df)
   } else {
     cat("## No significant DE genes\n")
   }
 }
 
 ## Heatmap-style plot for significant GO categories
-goplot <- function(GO_res, x_var = "contrast",
+goplot <- function(GO_df, x_var = "contrast",
                    title = NULL, xlabs = NULL, ylabsize = 9.5) {
-  p <- GO_res %>%
+  p <- GO_df %>%
     mutate(description = str_trunc(description, width = 45),
            description = ifelse(is.na(description), category, description)) %>%
     ggplot(aes_string(x_var, "description", fill = "padj")) +
@@ -80,18 +80,20 @@ goplot <- function(GO_res, x_var = "contrast",
 }
 
 ## Prep df for GO plot
-prep_goplot <- function(GO_res, contrasts) {
+prep_goplot <- function(GO_df, contrasts, tissues) {
   
-  missing <- contrasts_ht[!contrasts_ht %in% GO_res$contrast]
-  if (length(missing) > 0) GO_res <- GO_res %>% add_row(contrast = missing)
+  missing <- contrasts[!contrasts %in% GO_df$contrast]
+  if (length(missing) > 0) GO_df <- GO_df %>% add_row(contrast = missing)
   
-  GO_res %>%
-    filter(contrast %in% contrasts) %>%
+  GO_df <- GO_df %>% filter(contrast %in% contrasts, tissue %in% tissues)
+  if (length(tissues) > 1) GO_df <- GO_df %>% mutate(contrast = contrast_full)
+  
+  GO_df %>%
     select(contrast, padj, category, description) %>%
     pivot_wider(names_from = contrast, values_from = padj) %>%
     pivot_longer(cols = -c(category, description),
                  names_to = "contrast", values_to = "padj") %>%
-    mutate(padj = ifelse(padj >= 0.05, NA, padj),
-           contrast = factor(contrast, levels = contrasts)) %>%
+    mutate(padj = ifelse(padj >= 0.05, NA, padj)) %>% 
+           #contrast = factor(contrast, levels = contrasts)) %>%
     filter(category %in% (filter(., padj < 0.05) %>% pull(category)))
 }
