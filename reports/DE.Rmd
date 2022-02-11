@@ -1,8 +1,9 @@
 ---
 title: |
+  | _Aedes aegypti_ mRNA expression --
   | Differential expression downstream analyses
 pagetitle: "DE"
-author: "Jelmer Poelstra (poelstra.1@osu.edu), MCIC Wooster"
+author: "Jelmer Poelstra (poelstra.1@osu.edu), MCIC Wooster, OSU"
 date: "`r Sys.Date()`"
 output:
   html_document:
@@ -44,13 +45,8 @@ pacman::p_load(char = packages)
 ```
 
 ```{r}
-## Script with functions
-source(here("scripts", "GO_fun.R"))
-```
-
-```{r}
-f_sci <- function(x) format(x, scientific = TRUE, digits = 3)
-f_dec <- function(x) format(x, scientific = FALSE, digits = 2)
+## Source scripts with functions
+source(here("scripts/report_funs.R"))
 ```
 
 ```{r}
@@ -60,13 +56,13 @@ contrasts <- c("akh06_vir06", "akh24_vir24",
                "lvp06_akh06", "lvp24_akh24")
 contrast_names <- c("AKH v. virgin (6 hpm)",
                     "AKH v. virgin (24 hpm)",
-                    "WT v. virgin (6 hpm)",
-                    "WT v. virgin (24 hpm)",
-                    "AKH v. WT (6 hpm)",
-                    "AKH v. WT (24 hpm)")
+                    "LVP v. virgin (6 hpm)",
+                    "LVP v. virgin (24 hpm)",
+                    "AKH v. LVP (6 hpm)",
+                    "AKH v. LVP (24 hpm)")
 
 ## Define tissues
-all_tissues <- c("ab", "ht", "lrt", "lrt10")
+tissues <- c("ab", "ht", "lrt", "lrt10")
 ```
 
 ```{r}
@@ -77,12 +73,7 @@ my_cols <- brewer.pal(4, "Pastel2")
 ```{r}
 ## Define input files
 indir_DE <- here("results", "DE")
-indir_GO <- here("results", "GO")
-indir_kegg <- here("results", "kegg")
-
 DE_file <- here(indir_DE, "DE_all.txt")
-GO_res_file <- here(indir_GO, "GO_all.txt")
-kegg_res_file <- here(indir_kegg, "kegg_all.txt")
 gene_file <- here(indir_DE, "gene_info.txt")
 ```
 
@@ -91,22 +82,6 @@ gene_file <- here(indir_DE, "gene_info.txt")
 gene_df <- read_tsv(gene_file, show_col_types = FALSE) %>%
   select(gene_id, description) %>%
   mutate(description = str_trunc(description, width = 50))
-
-GO_res <- read_tsv(GO_res_file, show_col_types = FALSE) %>%
-  mutate(contrast_full = contrast,
-         sig = ifelse(padj < 0.05 & numDEInCat > 1, TRUE, FALSE),
-         tissue = sub(".*\\d\\d_(\\w+)$", "\\1", contrast),
-         contrast = sub("(.*_.*)_\\w+$", "\\1", contrast)) %>% 
-  filter(contrast %in% contrasts)           # Only select focal contrasts!
-GO_sig <- GO_res %>% filter(sig == TRUE)
-
-kegg_res <- read_tsv(kegg_res_file, show_col_types = FALSE) %>%
-  mutate(contrast_full = contrast,
-         sig = ifelse(padj < 0.05, TRUE, FALSE),
-         tissue = sub(".*\\d\\d_(\\w+)$", "\\1", contrast),
-         contrast = sub("(.*_.*)_\\w+$", "\\1", contrast)) %>% 
-  filter(contrast %in% contrasts)           # Only select focal contrasts!
-kegg_sig <- kegg_res %>% filter(sig == TRUE)
 
 DE_res <- read_tsv(DE_file, show_col_types = FALSE) %>%
   mutate(tissue = gsub(".*\\d(\\w+)", "\\1", treat_a),
@@ -133,38 +108,22 @@ contrast_df <- DE_res %>%
   select(contrast_full, contrast, trt_a, trt_b, tissue, sugar, time_contrast)
 ```
 
-```{r}
-## Function to make an exportable datatable
-make_dt <- function(df, numr_cols = NULL) {
-  dt <- datatable(df,
-                  filter = "top",
-                  class = "compact",
-                  extensions = "Buttons",
-                  options = list(scrollX = TRUE,
-                                 autoWidth = TRUE,
-                                 dom = "Blfrtip",
-                                 buttons = c("copy", "csv", "excel")))
-  if (!is.null(numr_cols)) dt <- dt %>% formatSignif(numr_cols, digits = 3)
-  return(dt)
-}
-```
-
 <br>
 
 I'm focusing on the following pairwise contrasts:
 
 - AKH vs. virgin at 6 hpm
 - AKH vs. virgin at 24 hpm
-- WT vs. virgin at 6 hpm
-- WT vs. virgin at 24 hpm
-- AKH vs. WT at 6 hpm
-- AKH vs. WT at 24 hpm
+- LVP vs. virgin at 6 hpm
+- LVP vs. virgin at 24 hpm
+- AKH vs. LVP at 6 hpm
+- AKH vs. LVP at 24 hpm
 
 Abbreviations:
+
 - `DEGs`: Differentially expressed genes
 - `padj`: Multiple-testing corrected (adjusted) p-value
 - `lfc`: Log2-fold change in mean expression level
-- `WT`: Wild-type (i.e., `LVP`)
 
 <br>
 
@@ -195,6 +154,7 @@ sig_by_comp <- DE_res %>%
 I am excluding the LVP vs AKH comparisons because of the lack of DEGs.)
 
 ```{r}
+## Barplot
 DE_res %>%
   filter(sig == TRUE, contrast %in% contrasts[1:4]) %>%
   ggplot(aes(x = contrast, fill = tissue)) +
@@ -212,12 +172,15 @@ DE_res %>%
   theme(legend.position = "top")
 ```
 
+<br>
+
 ```{r}
+## Table
 sig_by_comp %>% 
   rename("group A" = trt_a, "group B" = trt_b,
          abdomen = ab, "head & thorax" = ht,
          LRT3 = lrt, LRT10 = lrt10) %>%
-  make_dt()
+  make_dt(simple_mode = TRUE)
 ```
 
 ### LVP06 vs AKH06 in LRT3
@@ -300,26 +263,110 @@ volc_plot(DE_res, ftissue = "lrt10")
 
 -----
 
-## Top 10 DE lists
+## Top 10 DEG lists
 
 ```{r}
-top10 <- function(DE_df, ftissue, fcontrast) {
-  DE_df %>%
-    filter(tissue == ftissue,
-           contrast == fcontrast,
+top10 <- function(DE_df, ftissue, fcontrast,
+                  contrast_col = TRUE, tissue_col = FALSE) {
+  DE_df <- DE_df %>%
+    filter(tissue %in% ftissue,
+           contrast %in% fcontrast,
            padj < 0.05) %>%
     arrange(padj) %>%
-    select(-sig, -tissue, -sugar, -contrast_full, -trt_a, -trt_b) %>% 
+    select(-pvalue, -sig, -sugar, -contrast_full, -trt_a, -trt_b) %>% 
     slice(1:10) %>%
-    mutate(pvalue = ifelse(pvalue < 0.001, f_sci(pvalue), d_dec(pvalue)),
-           padj = ifelse(padj < 0.001, f_sci(padj), f_dec(padj))) %>% 
-    make_dt()
-    #kable() %>%
-    #kable_styling(full_width = FALSE, bootstrap_options = "striped")
+    mutate(padj = ifelse(padj < 0.001, f_sci(padj), f_dec(padj)))
+  
+  if (contrast_col == FALSE) DE_df <- DE_df %>% select(-contrast)
+  if (tissue_col == FALSE) DE_df <- DE_df %>% select(-tissue)
+  
+  make_dt(DE_df)
 }
 ```
 
+### Across all tissues & contrasts
+
+<br>
+
+```{r}
+top10(DE_res, tissues, contrasts, tissue_col = TRUE)
+```
+
+### Across all tissues by contrast  {.tabset .tabset-fade .tabset-pills}
+
+<br>
+
+#### `r contrasts[1]`
+
+<br>
+
+```{r}
+top10(DE_res, tissues, contrasts[1], contrast_col = FALSE, tissue_col = TRUE)
+```
+
+#### `r contrasts[2]`
+
+<br>
+
+```{r}
+top10(DE_res, tissues, contrasts[2], contrast_col = FALSE, tissue_col = TRUE)
+```
+
+#### `r contrasts[3]`
+
+<br>
+
+```{r}
+top10(DE_res, tissues, contrasts[3], contrast_col = FALSE, tissue_col = TRUE)
+```
+
+#### `r contrasts[4]`
+
+<br>
+
+```{r}
+top10(DE_res, tissues, contrasts[4], contrast_col = FALSE, tissue_col = TRUE)
+```
+
+### Across all contrasts by tissue  {.tabset .tabset-fade .tabset-pills}
+
+<br>
+
+#### `r tissues[1]`
+
+<br>
+
+```{r}
+top10(DE_res, tissues[1], contrasts)
+```
+
+#### `r tissues[2]`
+
+<br>
+
+```{r}
+top10(DE_res, tissues[2], contrasts)
+```
+
+#### `r tissues[3]`
+
+<br>
+
+```{r}
+top10(DE_res, tissues[3], contrasts)
+```
+
+#### `r tissues[4]`
+
+<br>
+
+```{r}
+top10(DE_res, tissues[4], contrasts)
+```
+
 ### Abdomen {.tabset .tabset-fade .tabset-pills}
+
+<br>
 
 ```{r}
 tissue <- "ab"
@@ -327,11 +374,15 @@ tissue <- "ab"
 
 #### `r contrasts[1]`
 
+<br>
+
 ```{r}
 top10(DE_res, tissue, contrasts[1])
 ```
 
 #### `r contrasts[2]`
+
+<br>
 
 ```{r}
 top10(DE_res, tissue, contrasts[2])
@@ -339,11 +390,15 @@ top10(DE_res, tissue, contrasts[2])
 
 #### `r contrasts[3]`
 
+<br>
+
 ```{r}
 top10(DE_res, tissue, contrasts[3])
 ```
 
 #### `r contrasts[4]`
+
+<br>
 
 ```{r}
 top10(DE_res, tissue, contrasts[4])
@@ -355,7 +410,11 @@ top10(DE_res, tissue, contrasts[4])
 tissue <- "ht"
 ```
 
+<br>
+
 #### `r contrasts[1]`
+
+<br>
 
 ```{r}
 top10(DE_res, tissue, contrasts[1])
@@ -363,17 +422,23 @@ top10(DE_res, tissue, contrasts[1])
 
 #### `r contrasts[2]`
 
+<br>
+
 ```{r}
 top10(DE_res, tissue, contrasts[2])
 ```
 
 #### `r contrasts[3]`
 
+<br>
+
 ```{r}
 top10(DE_res, tissue, contrasts[3])
 ```
 
 #### `r contrasts[4]`
+
+<br>
 
 ```{r}
 top10(DE_res, tissue, contrasts[4])
@@ -385,7 +450,11 @@ top10(DE_res, tissue, contrasts[4])
 tissue <- "lrt"
 ```
 
+<br>
+
 #### `r contrasts[1]`
+
+<br>
 
 ```{r}
 top10(DE_res, tissue, contrasts[1])
@@ -393,17 +462,23 @@ top10(DE_res, tissue, contrasts[1])
 
 #### `r contrasts[2]`
 
+<br>
+
 ```{r}
 top10(DE_res, tissue, contrasts[2])
 ```
 
 #### `r contrasts[3]`
 
+<br>
+
 ```{r}
 top10(DE_res, tissue, contrasts[3])
 ```
 
 #### `r contrasts[4]`
+
+<br>
 
 ```{r}
 top10(DE_res, tissue, contrasts[4])
@@ -411,11 +486,15 @@ top10(DE_res, tissue, contrasts[4])
 
 ### LRT 10% {.tabset .tabset-fade .tabset-pills}
 
+<br>
+
 ```{r}
 tissue <- "lrt10"
 ```
 
 #### `r contrasts[1]`
+
+<br>
 
 ```{r}
 top10(DE_res, tissue, contrasts[1])
@@ -427,6 +506,8 @@ top10(DE_res, tissue, contrasts[1])
 
 #### `r contrasts[2]`
 
+<br>
+
 ```{r}
 top10(DE_res, tissue, contrasts[2])
 ```
@@ -437,6 +518,8 @@ top10(DE_res, tissue, contrasts[2])
 
 #### `r contrasts[3]`
 
+<br>
+
 ```{r}
 top10(DE_res, tissue, contrasts[3])
 ```
@@ -446,6 +529,8 @@ top10(DE_res, tissue, contrasts[3])
 ----
 
 #### `r contrasts[4]`
+
+<br>
 
 ```{r}
 top10(DE_res, tissue, contrasts[4])
@@ -482,7 +567,11 @@ multisig <- function(DE_df, tissues, minsig = 2) {
 }
 ```
 
+<br>
+
 #### Abdomen
+
+<br>
 
 ```{r}
 msig <- multisig(DE_res, tissues = "ab")
@@ -491,12 +580,16 @@ make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
 
 #### Head & thorax
 
+<br>
+
 ```{r}
 msig <- multisig(DE_res, tissues = "ht")
 make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
 ```
 
 #### LRT (3%)
+
+<br>
 
 ```{r}
 msig <- multisig(DE_res, tissues = "lrt")
@@ -505,6 +598,8 @@ make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
 
 #### LRT 10%
 
+<br>
+
 ```{r}
 msig <- multisig(DE_res, tissues = "lrt10")
 make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
@@ -512,8 +607,10 @@ make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
 
 #### All tissues
 
+<br>
+
 ```{r}
-msig <- multisig(DE_res, tissues = all_tissues)
+msig <- multisig(DE_res, tissues = tissues)
 make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
 ```
 
@@ -538,7 +635,11 @@ multisig_time <- function(DE_df, ftissue) {
 }
 ```
 
+<br>
+
 #### Abdomen
+
+<br>
 
 ```{r}
 bothtimes <- multisig_time(DE_res, ftissue = "ab")
@@ -550,6 +651,8 @@ bothtimes %>% make_dt(numr_cols = c("padj_t06", "padj_t24"))
 
 #### Head & thorax
 
+<br>
+
 ```{r}
 bothtimes <- multisig_time(DE_res, ftissue = "ht")
 ```
@@ -560,6 +663,8 @@ bothtimes %>% make_dt(numr_cols = c("padj_t06", "padj_t24"))
 
 #### LRT (3%)
 
+<br>
+
 ```{r}
 bothtimes <- multisig_time(DE_res, ftissue = "lrt")
 ```
@@ -569,6 +674,8 @@ bothtimes %>% make_dt(numr_cols = c("padj_t06", "padj_t24"))
 ```
 
 #### LRT 10%
+
+<br>
 
 ```{r}
 bothtimes <- multisig_time(DE_res, ftissue = "lrt10")
@@ -581,6 +688,8 @@ bothtimes %>% make_dt(numr_cols = c("padj_t06", "padj_t24"))
 ### DE in multiple tissues {.tabset .tabset-fade .tabset-pills}
 
 LRT 10% is excluded here.
+
+<br>
 
 ```{r}
 ## Function to create a df with genes significant in multiple focal contrasts
@@ -608,6 +717,8 @@ multisig_tissue <- function(DE_df, fcontrast) {
 
 #### AKH vs Virgin -- 6 hpm
 
+<br>
+
 ```{r}
 bothtiss <- multisig_tissue(DE_res, fcontrast = "akh06_vir06")
 ```
@@ -616,7 +727,9 @@ bothtiss <- multisig_tissue(DE_res, fcontrast = "akh06_vir06")
 make_dt(bothtiss, numr_cols = c("padj_ab", "padj_ht", "padj_lrt"))
 ```
 
-#### WT vs Virgin -- 6 hpm
+#### LVP vs Virgin -- 6 hpm
+
+<br>
 
 ```{r}
 bothtiss <- multisig_tissue(DE_res, fcontrast = "lvp06_vir06")
@@ -626,7 +739,9 @@ bothtiss <- multisig_tissue(DE_res, fcontrast = "lvp06_vir06")
 make_dt(bothtiss, numr_cols = c("padj_ab", "padj_ht", "padj_lrt"))
 ```
 
-#### WT vs AKH -- 6 hpm
+#### LVP vs AKH -- 6 hpm
+
+<br>
 
 ```{r}
 bothtiss <- multisig_tissue(DE_res, fcontrast = "lvp06_akh06")
@@ -638,6 +753,8 @@ make_dt(bothtiss, numr_cols = c("padj_ab", "padj_ht", "padj_lrt"))
 
 #### AKH vs Virgin -- 24 hpm
 
+<br>
+
 ```{r}
 bothtiss <- multisig_tissue(DE_res, fcontrast = "akh24_vir24")
 ```
@@ -646,7 +763,9 @@ bothtiss <- multisig_tissue(DE_res, fcontrast = "akh24_vir24")
 make_dt(bothtiss, numr_cols = c("padj_ab", "padj_ht", "padj_lrt"))
 ```
 
-#### WT vs Virgin -- 24 hpm
+#### LVP vs Virgin -- 24 hpm
+
+<br>
 
 ```{r}
 bothtiss <- multisig_tissue(DE_res, fcontrast = "lvp24_vir24")
@@ -656,7 +775,9 @@ bothtiss <- multisig_tissue(DE_res, fcontrast = "lvp24_vir24")
 make_dt(bothtiss, numr_cols = c("padj_ab", "padj_ht", "padj_lrt"))
 ```
 
-#### WT vs AKH -- 24 hpm
+#### LVP vs AKH -- 24 hpm
+
+<br>
 
 ```{r}
 bothtiss <- multisig_tissue(DE_res, fcontrast = "lvp24_akh24")
@@ -829,7 +950,7 @@ venn_sugar(contrasts[2], DE_res)
 
 <br>
 
-#### WT vs Virgin -- 6 hpm
+#### LVP vs Virgin -- 6 hpm
 
 ```{r, results="hide", out.width="60%"}
 venn_sugar(contrasts[3], DE_res)
@@ -837,7 +958,7 @@ venn_sugar(contrasts[3], DE_res)
 
 <br>
 
-#### WT vs Virgin -- 24 hpm
+#### LVP vs Virgin -- 24 hpm
 
 ```{r, results="hide", out.width="60%"}
 venn_sugar(contrasts[4], DE_res)
@@ -846,6 +967,8 @@ venn_sugar(contrasts[4], DE_res)
 <br>
 
 ### Table of DEGs at both 3% and 10%
+
+<br>
 
 ```{r}
 sugarcomp <- function(fcontrast, DE_df) {
@@ -898,290 +1021,4 @@ p <- sugar_df %>%
   theme_bw(base_size = 14)
 
 ggplotly(p, tooltip = "text")
-```
-
-<br>
-
-----
-
-## Gene Ontology
-
-### Methods
-
-The R/Bioconductor package
-[`GOseq`](https://bioconductor.org/packages/release/bioc/html/goseq.html)
-was used to test for GO term enrichment among differentially expressed genes
-for each pairwise contrast.
-Gene Ontology assignments to genes were extracted from a VectorBase GAF
-file available
-[here](https://vectorbase.org/vectorbase/app/downloads/release-49/AaegyptiLVP_AGWG/gaf/).
-Gene lengths are used in the statistical model of `GOseq`,
-and there were extracted from a VectorBase GFF file available
-[here](https://vectorbase.org/vectorbase/app/downloads/release-49/AaegyptiLVP_AGWG/gff/data/).
-P-values were corrected for multiple testing using the Benjamini-Hochberg
-correction.
-
-### Nr significant GO terms per contrast
-
-```{r}
-sig_by_comp <- GO_sig %>%
-  group_by(contrast, tissue, .drop = FALSE) %>%
-  count(name = "nsig") %>%
-  ungroup() %>%
-  pivot_wider(id_cols = contrast, names_from = tissue, values_from = nsig) %>%
-  left_join(distinct(contrast_df, contrast, .keep_all = TRUE),
-            by = "contrast") %>% 
-  arrange(time_contrast, trt_a, trt_b) %>%
-  select(trt_a, trt_b, ab, ht, lrt, lrt10)
-
-sig_by_comp %>%
-  rename("group A" = trt_a, "group B" = trt_b,
-         abdomen = ab, "head & thorax" = ht, LRT3 = lrt, LRT10 = lrt10) %>%
-  make_dt()
-```
-
-### Nr significant contrasts per GO term {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-sig_by_term <- function(GO_df, tissues) {
-  
-  if (length(tissues) > 1) GO_df <- GO_df %>% mutate(contrast = contrast_full) 
-  
-  GO_df %>%
-    filter(tissue %in% tissues) %>%
-    add_count(category) %>%
-    group_by(category) %>%
-    mutate("signif. contrasts" = paste(contrast, collapse = ", ")) %>%
-    select("n significant" = n, category, ontology, description,
-           `signif. contrasts`) %>%
-    make_dt()
-}
-```
-
-#### Abdomen
-
-```{r}
-sig_by_term(GO_sig, tissues = "ab")
-```
-
-#### Head & thorax
-
-```{r}
-sig_by_term(GO_sig, tissues = "ht")
-```
-
-#### LRT (3%)
-
-```{r}
-sig_by_term(GO_sig, tissues = "lrt")
-```
-
-#### LRT 10%
-
-```{r}
-sig_by_term(GO_sig, tissues = "lrt10")
-```
-
-#### All tissues
-
-```{r}
-sig_by_term(GO_sig, tissues = c("ab", "ht", "lrt", "lrt10"))
-```
-
-### All significant GO terms
-
-```{r}
-sig_smr <- pivot_wider(GO_sig,
-                       id_cols = c(category, description),
-                       names_from = contrast_full,
-                       values_from = padj)
-
-numr_cols <- colnames(sig_smr)[str_detect(colnames(sig_smr), "_")]
-make_dt(sig_smr, numr_cols = numr_cols)
-```
-
-### Heatmaps {.tabset .tabset-fade .tabset-pills}
-
-Gray squares indicate non-significant values.
-
-#### Abdomen
-
-```{r, fig.height = 6, out.width="100%"}
-prep_goplot(GO_res, tissues = "ab", contrasts) %>%
-  goplot(ylabsize = 7)
-```
-
-#### Head & thorax
-
-```{r, out.width="100%"}
-prep_goplot(GO_res, tissues = "ht", contrasts) %>%
-  goplot()
-```
-
-#### LRT (3%)
-
-```{r, fig.height = 6, out.width="100%"}
-prep_goplot(GO_res, tissues = "lrt", contrasts) %>%
-  goplot(ylabsize = 7)
-```
-
-#### LRT 10%
-
-```{r, fig.height = 6, out.width="100%"}
-prep_goplot(GO_res, tissues = "lrt10", contrasts) %>% 
-  goplot(ylabsize = 7)
-```
-
-#### All tissues
-
-```{r, fig.height = 8, out.width="100%"}
-prep_goplot(GO_res, tissues = all_tissues, contrasts) %>%
-  goplot(ylabsize = 5)
-```
-
-<br>
-
-----
-
-## KEGG Ontology
-
-### Methods
-
-The R/Bioconductor package
-[`clusterProfiler`](https://bioconductor.org/packages/release/bioc/html/clusterProfiler.html)
-was used to test for KEGG term enrichment among differentially expressed genes
-for each pairwise contrast.
-KEGG pathway assignments to genes were obtained using the R/Bioconductor package 
-[`KEGGREST`](https://bioconductor.org/packages/release/bioc/html/KEGGREST.html),
-since KEGG mappings are available for _A. aegypti_.
-P-values were corrected for multiple testing using the Benjamini-Hochberg
-correction.
-
-### Nr significant pathways per contrast
-
-```{r}
-sig_by_comp <- kegg_sig %>%
-  group_by(contrast, tissue, .drop = FALSE) %>%
-  count(name = "nsig") %>%
-  ungroup() %>%
-  pivot_wider(id_cols = contrast, names_from = tissue, values_from = nsig) %>%
-    left_join(distinct(contrast_df, contrast, .keep_all = TRUE),
-            by = "contrast") %>%
-  arrange(time_contrast, trt_a, trt_b) %>%
-  select(trt_a, trt_b, ab, ht, lrt, lrt10)
-
-sig_by_comp %>%
-  rename("group A" = trt_a, "group B" = trt_b,
-         abdomen = ab, "head & thorax" = ht, LRT3 = lrt, LRT10 = lrt10) %>%
-  make_dt()
-```
-
-### Nr significant contrasts per pathway {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-sig_by_pathway <- function(kegg_df, tissues) {
-  
-  if (length(tissues) > 1) kegg_df <- kegg_df %>% mutate(contrast = contrast_full) 
-  
-  kegg_df %>%
-    filter(tissue %in% tissues) %>%
-    add_count(category) %>%
-    group_by(category) %>%
-    mutate("signif. contrasts" = paste(contrast, collapse = ", ")) %>%
-    select("n significant" = n, pathway = category, description,
-           `signif. contrasts`) %>%
-    make_dt()
-}
-```
-
-#### Abdomen
-
-```{r}
-sig_by_pathway(kegg_sig, tissues = "ab")
-```
-
-#### Head & thorax
-
-```{r}
-sig_by_pathway(kegg_sig, tissues = "ht")
-```
-
-#### LRT (3%)
-
-```{r}
-sig_by_pathway(kegg_sig, tissues = "lrt")
-```
-
-#### LRT 10%
-
-```{r}
-sig_by_pathway(kegg_sig, tissues = "lrt10")
-```
-
-#### All tissues
-
-```{r}
-sig_by_pathway(kegg_sig, tissues = c("ab", "ht", "lrt", "lrt10"))
-```
-
-```{r}
-sig_by_term <- kegg_sig %>%
-  add_count(category) %>%
-  group_by(category) %>%
-  mutate("signif. contrasts" = paste(contrast, collapse = ", ")) %>%
-  select("n significant" = n, pathway = category, description, `signif. contrasts`)
-
-make_dt(sig_by_term)
-```
-
-### All significant pathways
-
-```{r}
-sig_smr <- pivot_wider(kegg_sig,
-                       id_cols = c(category, description),
-                       names_from = contrast_full,
-                       values_from = padj)
-
-numr_cols <- colnames(sig_smr)[str_detect(colnames(sig_smr), "_")]
-
-make_dt(sig_smr, numr_cols = numr_cols)
-```
-
-### Heatmaps {.tabset .tabset-fade .tabset-pills}
-
-Gray squares indicate non-significant values.
-
-#### Abdomen
-
-```{r, fig.height=5, out.width="100%"}
-prep_goplot(kegg_res, tissues = "ab", contrasts) %>%
-  goplot()
-```
-
-#### Head & thorax
-
-```{r, fig.height=5, out.width="100%"}
-prep_goplot(kegg_res, tissues = "ht", contrasts) %>%
-  goplot()
-```
-
-#### LRT (3%)
-
-```{r, fig.height=5, out.width="100%"}
-prep_goplot(kegg_res, tissues = "lrt", contrasts) %>%
-  goplot()
-```
-
-#### LRT 10%
-
-```{r, fig.height=5, out.width="100%"}
-prep_goplot(kegg_res, tissues = "lrt10", contrasts) %>%
-  goplot()
-```
-
-#### All tissues
-
-```{r, fig.height=5, out.width="100%"}
-prep_goplot(kegg_res, tissues = all_tissues, contrasts) %>%
-  goplot(ylabsize = 7)
 ```
