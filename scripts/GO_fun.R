@@ -57,13 +57,13 @@ run_GO <- function(fcontrast, DE_vec, GO_map, gene_lens) {
 
 ## Heatmap-style plot for significant GO categories
 goplot <- function(GO_df, x_var = "contrast",
-                   title = NULL, xlabs = NULL, ylabsize = 9.5) {
+                   title = NULL, xlabs = NULL, ylabsize = 9) {
   p <- GO_df %>%
     mutate(description = str_trunc(description, width = 45),
            description = ifelse(is.na(description), category, description)) %>%
     ggplot(aes_string(x_var, "description", fill = "padj")) +
-    geom_tile(stat = "identity", size = 0.25, color = "grey20") +
-    scale_fill_distiller(palette = "Reds", na.value = "grey80") +
+    geom_tile(stat = "identity", size = 0.25, color = "grey40") +
+    scale_fill_distiller(palette = "Reds", na.value = "grey90") +
     labs(fill = "adjusted\np-value",
          title = title) +
     scale_y_discrete(position = "right") +
@@ -94,6 +94,5 @@ prep_goplot <- function(GO_df, contrasts, tissues) {
     pivot_longer(cols = -c(category, description),
                  names_to = "contrast", values_to = "padj") %>%
     mutate(padj = ifelse(padj >= 0.05, NA, padj)) %>% 
-           #contrast = factor(contrast, levels = contrasts)) %>%
     filter(category %in% (filter(., padj < 0.05) %>% pull(category)))
 }
