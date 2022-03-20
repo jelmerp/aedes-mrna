@@ -55,44 +55,107 @@ run_GO <- function(fcontrast, DE_vec, GO_map, gene_lens) {
   }
 }
 
-## Heatmap-style plot for significant GO categories
-goplot <- function(GO_df, x_var = "contrast",
-                   title = NULL, xlabs = NULL, ylabsize = 9) {
-  p <- GO_df %>%
+## Prep df for GO plot
+prep_goplot <- function(df, contrasts, tissues) {
+  
+  ## Subset to focal contrasts and tissues
+  df <- df %>% filter(contrast %in% contrasts, tissue %in% tissues)
+  
+  ## When using >1 tissue, use longer contrast ID
+  if (length(tissues) > 1) {
+    df <- df %>% mutate(contrast = contrast_full)
+    contrasts <- unique(df$contrast_full)
+  }
+  
+  vars <- c("category", "ontology", "description", "tissue", "contrast", "padj")
+  
+  df %>%
+    select(any_of(vars)) %>%
+    ## Pivot wider and then longer to include all terms in all contrasts
+    pivot_wider(names_from = contrast, values_from = padj) %>%
+    pivot_longer(cols = any_of(contrasts),
+                 names_to = "contrast", values_to = "padj") %>%
+    left_join(df %>% select(contrast, tissue, category, numDEInCat),
+              by = c("contrast", "tissue", "category")) %>%
+    ## No labels if not significant
+    mutate(numDEInCat = ifelse(padj >= 0.05, NA, numDEInCat)) %>%
+    mutate(contrast = sub("padj_", "", contrast),
+           padj = ifelse(padj >= 0.05, NA, padj),
+           padj_log = -log10(padj)) %>% 
+    ## Only take GO categories with at least one significant contrast
+    filter(category %in% (filter(., padj < 0.05) %>% pull(category))) %>%
+    ## Only take contrast with at least one significant category
+    filter(contrast %in% (filter(., padj < 0.05) %>% pull(contrast))) %>%
+    arrange(padj_log) %>% 
     mutate(description = str_trunc(description, width = 45),
-           description = ifelse(is.na(description), category, description)) %>%
-    ggplot(aes_string(x_var, "description", fill = "padj")) +
-    geom_tile(stat = "identity", size = 0.25, color = "grey40") +
-    scale_fill_distiller(palette = "Reds", na.value = "grey90") +
-    labs(fill = "adjusted\np-value",
-         title = title) +
+           description = ifelse(is.na(description), category, description),
+           description = fct_inorder(description))
+}
+
+## Heatmap-style plot for significant GO categories
+goplot <- function(df, x_var = "contrast", type = "GO",
+                   title = NULL, xlabs = NULL, ylabsize = 9) {
+  p <- df %>%
+    ggplot(aes_string(x_var, "description", fill = "padj_log")) +
+    geom_tile(stat = "identity", size = 0.25, color = "grey80") +
+    geom_label(aes(label = numDEInCat), fill = "grey95", size = 1.5) +
+    scale_fill_viridis_c(option = "D", na.value = "grey95") +
+    labs(fill = "-log10\n(adj. p)", title = title) +
     scale_y_discrete(position = "right") +
     theme_minimal() +
     theme(legend.position = "left",
           panel.grid = element_blank(),
           axis.title = element_blank(),
-          axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
           axis.text.y = element_text(size = ylabsize))
 
-  if(!is.null(xlabs)) p <- p + scale_x_discrete(labels = xlabs)
+  if (type == "GO") {
+    ## ggforce::facet_col will keep tile heights constant
+    p <- p +
+      facet_col(vars(ontology), scales = "free_y", space = "free") +
+      theme(strip.text = element_text(size = 10, face = "bold"))
+  }
+  
+  if (!is.null(xlabs)) p <- p + scale_x_discrete(labels = xlabs)
 
   return(p)
 }
 
-## Prep df for GO plot
-prep_goplot <- function(GO_df, contrasts, tissues) {
+## GO dotplot
+godotplot <- function(df, type = "GO") {
   
-  missing <- contrasts[!contrasts %in% GO_df$contrast]
-  if (length(missing) > 0) GO_df <- GO_df %>% add_row(contrast = missing)
+  #if (type == "GO") group_by <- "ontology" else group_by <- NULL 
   
-  GO_df <- GO_df %>% filter(contrast %in% contrasts, tissue %in% tissues)
-  if (length(tissues) > 1) GO_df <- GO_df %>% mutate(contrast = contrast_full)
+  p <- ggdotchart(df,
+             x = "description", y = "padj_log",
+             color = "padj_log",
+             sorting = "descending",                       # Sort value in descending order
+             add = "segments",                             # Add segments from y = 0 to dots
+             rotate = TRUE,                                # Rotate vertically
+             #group = group_by,                             # Order by groups
+             dot.size = 5,                                 # Large dot size
+             label = "numDEInCat",                         # Add nr DE genes as dot labels
+             font.label = list(color = "white", size = 9, vjust = 0.5),
+             ggtheme = theme_bw()) +                       # ggplot2 theme
+    labs(y = "-log10(adj. p-value)", x = NULL) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+    scale_color_viridis_c(option = "D", na.value = "grey95") +
+    theme(plot.margin = margin(0.5, 0.5, 0.5, 0.5, unit = "cm"),
+          plot.title = element_text(size = 15, face = "bold"),
+          strip.text.y = element_text(angle = 270, face = "bold"),
+          strip.placement = "outside",
+          axis.title.x = element_text(margin = margin(t = 0.5, b = 0.5, unit = "cm")),
+          axis.title.y = element_blank(),
+          axis.text.x = element_text(size = 9),
+          axis.text.y = element_text(size = 8),
+          legend.position = "none",
+          panel.grid.major.y = element_blank(),
+          panel.grid.minor.x = element_blank())
   
-  GO_df %>%
-    select(contrast, padj, category, description) %>%
-    pivot_wider(names_from = contrast, values_from = padj) %>%
-    pivot_longer(cols = -c(category, description),
-                 names_to = "contrast", values_to = "padj") %>%
-    mutate(padj = ifelse(padj >= 0.05, NA, padj)) %>% 
-    filter(category %in% (filter(., padj < 0.05) %>% pull(category)))
+  if (type == "GO") {
+    p <- p + facet_grid(ontology~contrast, space = "free", scales = "free")
+  } else if (type == "KEGG") {
+    p <- p + facet_wrap(vars(contrast), scales = "free_x", nrow = 1)
+  }
+  
+  print(p)
 }

@@ -19,3 +19,23 @@ run_kegg <- function(fcontrast, DE_res, kegg_map) {
     cat("\n")
   }
 }
+
+## Get the NCBI gene ID
+geneID_lookup <- function(geneID) {
+  res <- entrez_search(db = "gene", term = geneID)$ids
+  print(res)
+  return(res)
+}
+
+## Get the genes belonging to a certain KEGG pathway
+get_pw_genes <- function(pathway_id) {
+  print(pathway_id)
+  
+  pw <- keggGet(pathway_id)
+  if (is.null(pw[[1]]$GENE)) return(NA)
+  
+  pw2 <- pw[[1]]$GENE[c(TRUE, FALSE)]
+  pw2 <- unlist(lapply(strsplit(pw2, split = ";", fixed = T), function(x)x[1]))
+  
+  return(pw2)
+}
