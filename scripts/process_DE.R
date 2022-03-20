@@ -17,8 +17,9 @@ outfile_idx <- here(outdir, "gene_info.txt")
 
 ## Function to create a df for DE results for 1 pairwise comparison
 get1comp <- function(treat_a, treat_b,
-                     xls, sheet = "DE genes table", range,
-                     idx, la_order = "la") {
+                     xls, sheet = "DE genes table",
+                     range, idx,
+                     la_order = "la") {
   
   de <- read_xlsx(xls, sheet = sheet, range = range)%>%
     bind_cols(idx, .) %>%
@@ -68,15 +69,14 @@ get1file <- function(xls, tissue, la_order = "la") {
 abd <- get1file(abd_in, "ab")
 ht <- get1file(ht_in, "ht")
 lrt <- get1file(lrt_in, "lrt")
-sug03 <- bind_rows(abd, ht, lrt) %>%
-  mutate(sugar = "sug03")
+sug03 <- bind_rows(abd, ht, lrt) %>% mutate(sugar = "sug03")
 
-## Create df with older results (10% sugar)
-sug10 <- get1file(lrt_old_in, "lrt", la_order = "al") %>%
-  mutate(sugar = "sug10")
+## Create df with older results (12% sugar)
+sug12 <- get1file(lrt_old_in, "lrt", la_order = "al") %>%
+  mutate(sugar = "sug12")
 
 ## Combine dfs
-all <- bind_rows(sug03, sug10)
+all <- bind_rows(sug03, sug12)
 
 ## Create df with gene info
 idx <- read_xlsx(abd_in, sheet = "DE genes table", range = c("C5:H50000")) %>%
