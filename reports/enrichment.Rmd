@@ -2,7 +2,7 @@
 title: |
   | _Aedes aegypti_ mRNA expression --
   | Gene set enrichment analyses
-pagetitle: "enrichment"
+pagetitle: "Enrichment results"
 author: "Jelmer Poelstra (poelstra.1@osu.edu), MCIC Wooster, OSU"
 date: "`r Sys.Date()`"
 output:
@@ -37,6 +37,8 @@ if(! "pacman" %in% installed.packages()) install.packages("pacman")
 packages <- c("tidyverse",        # Misc. data manipulation and plotting
               "here",             # Managing file paths
               "VennDiagram",      # Venn Diagram
+              "ggpubr",           # Cleveland dot plots
+              "ggforce",          # facet_col for equal tile heights
               "RColorBrewer",     # Plotting colors
               "plotly",           # Interactive plots
               "glue",             # Pasting text
@@ -101,6 +103,7 @@ DE_res <- read_tsv(DE_file, show_col_types = FALSE) %>%
 ```{r}
 ## Read input files 2
 GO_res <- read_tsv(GO_res_file, show_col_types = FALSE) %>%
+  filter(category != "GO:0055114") %>%  # Remove obsolete GO category
   mutate(description = str_trunc(description, width = 50),
          contrast_full = contrast,
          sig = ifelse(padj < 0.05 & numDEInCat > 1, TRUE, FALSE),
@@ -110,7 +113,9 @@ GO_res <- read_tsv(GO_res_file, show_col_types = FALSE) %>%
 GO_sig <- GO_res %>% filter(sig == TRUE)
 
 kegg_res <- read_tsv(kegg_res_file, show_col_types = FALSE) %>%
-  mutate(description = str_trunc(description, width = 50),
+  rename(numDEInCat = count) %>% 
+  mutate(description = gsub(" - Aedes.*", "", description),
+         description = str_trunc(description, width = 50),
          contrast_full = contrast,
          sig = ifelse(padj < 0.05, TRUE, FALSE),
          tissue = sub(".*\\d\\d_(\\w+)$", "\\1", contrast),
@@ -150,6 +155,16 @@ and there were extracted from a VectorBase GFF file available
 [here](https://vectorbase.org/vectorbase/app/downloads/release-49/AaegyptiLVP_AGWG/gff/data/).
 P-values were corrected for multiple testing using the Benjamini-Hochberg
 correction.
+
+**Added notes 2021-02-19**
+- GO category `GO:0055114`, which was present in earlier versions of this document,
+  was removed because it is an obsolete category.
+  This category was related to oxidation-reduction which is now reflected by
+  `GO:0016491` (oxidoreductase activity).
+- In some cases, a GO category is significant even though only a single gene in
+  the category is DE. Those cases are currently retained but an alternative would
+  be to require at least 2 DEGs in addition to an adjusted p-value below 0.05.
+
 
 ### Nr significant GO terms per contrast
 
@@ -214,7 +229,7 @@ sig_by_term(GO_sig, tissues = "ht")
 sig_by_term(GO_sig, tissues = "lrt")
 ```
 
-#### LRT 10%
+#### LRT 12%
 
 <br>
 
@@ -244,7 +259,8 @@ make_dt(sig_smr, numr_cols = numr_cols)
 
 ### Heatmaps {.tabset .tabset-fade .tabset-pills}
 
-Gray squares indicate non-significant values.
+- Gray squares indicate non-significant values.
+- Numbers indicate the number of DEGs in the focal category.
 
 #### Abdomen
 
@@ -267,18 +283,49 @@ prep_goplot(GO_res, tissues = "lrt", contrasts) %>%
   goplot(ylabsize = 7)
 ```
 
-#### LRT 10%
+#### LRT 12%
 
 ```{r, fig.height = 6, out.width="100%"}
 prep_goplot(GO_res, tissues = "lrt10", contrasts) %>% 
   goplot(ylabsize = 7)
 ```
 
-#### All tissues
-
 ```{r, fig.height = 8, out.width="100%"}
-prep_goplot(GO_res, tissues = tissues, contrasts) %>%
-  goplot(ylabsize = 5)
+# #### All tissues
+# prep_goplot(GO_res, tissues = tissues, contrasts) %>%
+#   goplot(ylabsize = 5)
+```
+
+### Cleveland Dotplots {.tabset .tabset-fade .tabset-pills}
+
+Numbers indicate the number of DEGs in the focal category.
+
+#### Abdomen
+
+```{r, fig.height = 6, out.width="100%"}
+prep_goplot(GO_res, tissues = "ab", contrasts) %>%
+  godotplot()
+```
+
+#### Head & thorax
+
+```{r, out.width="100%"}
+prep_goplot(GO_res, tissues = "ht", contrasts) %>%
+  godotplot()
+```
+
+#### LRT (3%)
+
+```{r, fig.height = 6, out.width="100%"}
+prep_goplot(GO_res, tissues = "lrt", contrasts) %>%
+  godotplot()
+```
+
+#### LRT 12%
+
+```{r, fig.height = 6, out.width="100%"}
+prep_goplot(GO_res, tissues = "lrt10", contrasts) %>% 
+  godotplot()
 ```
 
 <br>
@@ -359,7 +406,7 @@ sig_by_pathway(kegg_sig, tissues = "ht")
 sig_by_pathway(kegg_sig, tissues = "lrt")
 ```
 
-#### LRT 10%
+#### LRT 12%
 
 <br>
 
@@ -400,39 +447,73 @@ make_dt(sig_smr, numr_cols = numr_cols)
 
 ### Heatmaps {.tabset .tabset-fade .tabset-pills}
 
-Gray squares indicate non-significant values.
+- Gray squares indicate non-significant values.
+- Numbers indicate the number of DEGs in the focal category.
 
 #### Abdomen
 
 ```{r, fig.height=5, out.width="100%"}
 prep_goplot(kegg_res, tissues = "ab", contrasts) %>%
-  goplot()
+  goplot(type = "KEGG")
 ```
 
 #### Head & thorax
 
 ```{r, fig.height=5, out.width="100%"}
 prep_goplot(kegg_res, tissues = "ht", contrasts) %>%
-  goplot()
+  goplot(type = "KEGG")
 ```
 
 #### LRT (3%)
 
 ```{r, fig.height=5, out.width="100%"}
 prep_goplot(kegg_res, tissues = "lrt", contrasts) %>%
-  goplot()
+  goplot(type = "KEGG")
 ```
 
-#### LRT 10%
+#### LRT 12%
 
 ```{r, fig.height=5, out.width="100%"}
 prep_goplot(kegg_res, tissues = "lrt10", contrasts) %>%
-  goplot()
+  goplot(type = "KEGG")
 ```
-
-#### All tissues
 
 ```{r, fig.height=5, out.width="100%"}
-prep_goplot(kegg_res, tissues = tissues, contrasts) %>%
-  goplot(ylabsize = 7)
+#### All tissues
+#prep_goplot(kegg_res, tissues = tissues, contrasts) %>%
+#  goplot(ylabsize = 7)
 ```
+
+### Cleveland Dotplots {.tabset .tabset-fade .tabset-pills}
+
+Numbers indicate the number of DEGs in the focal category.
+
+#### Abdomen
+
+```{r, fig.height = 6, out.width="100%"}
+prep_goplot(kegg_res, tissues = "ab", contrasts) %>%
+  godotplot(type = "KEGG")
+```
+
+#### Head & thorax
+
+```{r, out.width="100%"}
+prep_goplot(kegg_res, tissues = "ht", contrasts) %>%
+  godotplot(type = "KEGG")
+```
+
+#### LRT (3%)
+
+```{r, fig.height = 6, out.width="100%"}
+prep_goplot(kegg_res, tissues = "lrt", contrasts) %>%
+  godotplot(type = "KEGG")
+```
+
+#### LRT 12%
+
+```{r, fig.height = 6, out.width="100%"}
+prep_goplot(kegg_res, tissues = "lrt10", contrasts) %>% 
+  godotplot(type = "KEGG")
+```
+
+<br>
