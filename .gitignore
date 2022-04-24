@@ -13,3 +13,5 @@ sandbox/
 .Rproj.user
 refdata/
 manuscript/
+*.DS_Store*
+*Rhistory*
