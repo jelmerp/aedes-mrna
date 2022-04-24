@@ -1,3 +1,11 @@
+## Function to make a kable table
+make_kable <- function(df, caption = NULL) {
+  df %>%
+    kable(caption = caption,
+          format.args = list(big.mark = ",")) %>%
+    kable_styling(full_width = FALSE, bootstrap_options = "striped")
+}
+
 ## Function to make an exportable datatable
 make_dt <- function(df, numr_cols = "auto", caption = NULL,
                     filter = filter, pageLength = 10,
@@ -35,7 +43,7 @@ make_dt <- function(df, numr_cols = "auto", caption = NULL,
   )
   
   ## Numeric columns
-  if (numr_cols == "auto") {
+  if (numr_cols[1] == "auto") {
     numr_cols <- names(df)[which(sapply(df, class) == "numeric")]
   }
   if (!is.null(numr_cols) & length(numr_cols) > 0) {
