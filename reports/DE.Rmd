@@ -52,23 +52,24 @@ source(here("scripts/report_funs.R"))
 
 ```{r}
 ## Set contrasts of interest
-contrasts <- c("akh06_vir06", "akh24_vir24",
-               "lvp06_vir06", "lvp24_vir24",
-               "lvp06_akh06", "lvp24_akh24")
-contrast_names <- c("AKH v. virgin (6 hpm)",
-                    "AKH v. virgin (24 hpm)",
-                    "LVP v. virgin (6 hpm)",
-                    "LVP v. virgin (24 hpm)",
-                    "AKH v. LVP (6 hpm)",
-                    "AKH v. LVP (24 hpm)")
+contrasts <- c("lvp06_vir06", "lvp24_vir24")
+contrasts_all <- c("akh06_vir06", "akh24_vir24",
+                   "lvp06_vir06", "lvp24_vir24",
+                   "lvp06_akh06", "lvp24_akh24")
+# contrast_labs <- c("mated v. unmated (6 hpm)",
+#                     "mated v. unmated (24 hpm)")
+contrast_labs <- c("6 hpm", "24 hpm")
 
 ## Define tissues
-tissues <- c("ab", "ht", "lrt", "lrt12")
+tissues <- c("ab", "ht", "lrt")
+#tissue_labs <- c("abdomen", "head & thorax", "LRT")
+tissue_labs <- c("Ab", "HT", "LRT")
 ```
 
 ```{r}
 ## Set colors for Venn diagram
-my_cols <- brewer.pal(4, "Pastel2")
+contrast_cols <- brewer.pal(4, "Pastel2")[1:2]
+tissue_cols <- brewer.pal(3, "Set2")
 ```
 
 ```{r}
@@ -87,7 +88,7 @@ gene_df <- read_tsv(gene_file, show_col_types = FALSE) %>%
   select(gene_id, description) %>%
   mutate(description = str_trunc(description, width = 50))
 
-DE_res <- read_tsv(DE_file, show_col_types = FALSE) %>%
+DE_res_all <- read_tsv(DE_file, show_col_types = FALSE) %>%
   mutate(tissue = gsub(".*\\d(\\w+)", "\\1", treat_a),
          tissue = ifelse(sugar == "sug12", "lrt12", tissue),
          trt_a = gsub("(.*\\d+)\\w+", "\\1", treat_a),
@@ -99,8 +100,10 @@ DE_res <- read_tsv(DE_file, show_col_types = FALSE) %>%
   select(gene_id, lfc, pvalue, padj, sig,
          trt_a, trt_b, tissue, sugar, contrast, contrast_full) %>%
   left_join(gene_df, by = "gene_id")
+DE_res <- DE_res_all %>% filter(tissue %in% tissues)
 
-count_df <- read_tsv(counts_file)
+count_df_all <- read_tsv(counts_file)
+count_df <- count_df_all %>% filter(sugar != "sug12", !grepl("akh", treatment))
 ```
 
 ```{r}
@@ -127,12 +130,8 @@ contrast_df <- DE_res %>%
 
 I'm focusing on the following pairwise contrasts:
 
-- AKH vs. virgin at 6 hpm
-- AKH vs. virgin at 24 hpm
 - LVP vs. virgin at 6 hpm
 - LVP vs. virgin at 24 hpm
-- AKH vs. LVP at 6 hpm
-- AKH vs. LVP at 24 hpm
 
 Abbreviations:
 
@@ -167,9 +166,6 @@ sig_by_comp <- DE_res %>%
   select(-time_contrast)
 ```
 
-(From the barplot below and many other plots,
-I am excluding the LVP vs AKH comparisons because of the lack of DEGs.)
-
 ```{r}
 ## Barplot
 DE_res %>%
@@ -178,11 +174,10 @@ DE_res %>%
   geom_bar(position = position_dodge(preserve = "single"),
            color = "grey40") +
   scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
-  scale_x_discrete(labels = contrast_names, drop = FALSE) +
+  scale_x_discrete(labels = contrast_labs, drop = FALSE) +
   scale_fill_brewer(palette = "Set2",
-                    labels = c("abdomen", "head & thorax",
-                               "LRT (3%)","LRT (12%)"),
-                    name = "Sugar water",
+                    labels = tissue_labs,
+                    name = "Tissue",
                     drop = FALSE) +
   labs(x = "", y = "Number of DEGs") +
   theme_classic() +
@@ -195,21 +190,8 @@ DE_res %>%
 ## Table
 sig_by_comp %>% 
   rename("group A" = trt_a, "group B" = trt_b,
-         abdomen = ab, "head & thorax" = ht,
-         LRT3 = lrt, LRT12 = lrt12) %>%
-  make_dt(simple_mode = TRUE)
-```
-
-### LVP06 vs AKH06 in LRT3
-
-This is the only gene that is DE between a LVP vs AKH comparison:
-
-```{r}
-DE_res %>%
-  filter(padj < 0.05, contrast == "lvp06_akh06") %>%
-  select(-contrast, -sig) %>%
-  kable() %>%
-  kable_styling(full_width = FALSE, bootstrap_options = "striped")
+         abdomen = ab, "head & thorax" = ht) %>%
+  make_kable() 
 ```
 
 ### Volcano plots {.tabset .tabset-fade .tabset-pills}
@@ -264,16 +246,6 @@ volc_plot(DE_res, ftissue = "ht")
 
 ```{r, out.width="90%"}
 volc_plot(DE_res, ftissue = "lrt")
-```
-
-<br>
-
------
-
-#### LRT 12%
-
-```{r, out.width="90%"}
-volc_plot(DE_res, ftissue = "lrt12")
 ```
 
 <br>
@@ -441,60 +413,6 @@ if (nrow(t10) > 1) plot_heat2(t10$gene_id)
 walk(unique(t10$gene_id), plot_box)
 ```
 
-#### `r contrasts[3]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissues, contrasts[3],
-             contrast_col = FALSE, tissue_col = TRUE)
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
-#### `r contrasts[4]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissues, contrasts[4],
-             contrast_col = FALSE, tissue_col = TRUE)
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
 ### Across all contrasts by tissue {.tabset .tabset-fade .tabset-pills}
 
 <br>
@@ -577,32 +495,6 @@ if (nrow(t10) > 1) plot_heat2(t10$gene_id)
 walk(unique(t10$gene_id), plot_box)
 ```
 
-#### `r tissues[4]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissues[4], contrasts)
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
 ### Abdomen {.tabset .tabset-fade .tabset-pills}
 
 <br>
@@ -641,58 +533,6 @@ walk(unique(t10$gene_id), plot_box)
 
 ```{r}
 t10 <- top10(DE_res, tissue, contrasts[2])
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
-#### `r contrasts[3]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissue, contrasts[3])
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
-#### `r contrasts[4]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissue, contrasts[4])
 ```
 
 ##### Table
@@ -775,58 +615,6 @@ if (nrow(t10) > 1) plot_heat2(t10$gene_id)
 walk(unique(t10$gene_id), plot_box)
 ```
 
-#### `r contrasts[3]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissue, contrasts[3])
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
-#### `r contrasts[4]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissue, contrasts[4])
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
 ### LRT (3%) {.tabset .tabset-fade .tabset-pills}
 
 <br>
@@ -887,186 +675,6 @@ if (nrow(t10) > 1) plot_heat2(t10$gene_id)
 walk(unique(t10$gene_id), plot_box)
 ```
 
-#### `r contrasts[3]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissue, contrasts[3])
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
-#### `r contrasts[4]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissue, contrasts[4])
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
-### LRT 12% {.tabset .tabset-fade .tabset-pills}
-
-<br>
-
-```{r}
-tissue <- "lrt12"
-```
-
-#### `r contrasts[1]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissue, contrasts[1])
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
-<br>
-
-----
-
-#### `r contrasts[2]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissue, contrasts[2])
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
-<br>
-
-----
-
-#### `r contrasts[3]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissue, contrasts[3])
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
-<br>
-
-----
-
-#### `r contrasts[4]` {.tabset .tabset-fade .tabset-pills}
-
-```{r}
-t10 <- top10(DE_res, tissue, contrasts[4])
-```
-
-##### Table
-
-<br>
-
-```{r}
-make_dt(t10)
-```
-
-##### Heatmap
-
-```{r}
-if (nrow(t10) > 1) plot_heat2(t10$gene_id)
-```
-
-##### Boxplots
-
-```{r}
-walk(unique(t10$gene_id), plot_box)
-```
-
-<br>
-
-----
-
 ## DEGs across multiple contrasts
 
 ### Any contrast combination {.tabset .tabset-fade .tabset-pills}
@@ -1113,7 +721,7 @@ make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
 ##### Heatmap for top-100
 
 ```{r}
-plot_heat2(msig$gene_id[1:min(100, length(msig$gene_id))])
+if (nrow(msig) > 1) plot_heat2(msig$gene_id[1:min(100, length(msig$gene_id))])
 ```
 
 ##### Boxplots for top-10
@@ -1133,19 +741,19 @@ msig <- multisig(DE_res, tissues = "ht")
 ##### Table
 
 ```{r}
-make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
+if(nrow(msig) > 0) make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
 ```
 
 ##### Heatmap for top-100
 
 ```{r}
-plot_heat2(msig$gene_id[1:min(100, length(msig$gene_id))])
+if(nrow(msig) > 1) plot_heat2(msig$gene_id[1:min(100, length(msig$gene_id))])
 ```
 
 ##### Boxplots for top-10
 
 ```{r}
-walk(msig$gene_id[1:min(10, length(msig$gene_id))], plot_box)
+if(nrow(msig) > 0) walk(msig$gene_id[1:min(10, length(msig$gene_id))], plot_box)
 ```
 
 #### LRT (3%) {.tabset .tabset-fade .tabset-pills}
@@ -1159,45 +767,19 @@ msig <- multisig(DE_res, tissues = "lrt")
 ##### Table
 
 ```{r}
-make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
+if(nrow(msig) > 0) make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
 ```
 
 ##### Heatmap for top-100
 
 ```{r}
-plot_heat2(msig$gene_id[1:min(100, length(msig$gene_id))])
+if(nrow(msig) > 1) plot_heat2(msig$gene_id[1:min(100, length(msig$gene_id))])
 ```
 
 ##### Boxplots for top-10
 
 ```{r}
-walk(msig$gene_id[1:min(10, length(msig$gene_id))], plot_box)
-```
-
-#### LRT 12% {.tabset .tabset-fade .tabset-pills}
-
-<br>
-
-```{r}
-msig <- multisig(DE_res, tissues = "lrt12")
-```
-
-##### Table
-
-```{r}
-make_dt(msig, numr_cols = colnames(msig)[3:(ncol(msig) - 1)])
-```
-
-##### Heatmap for top-100
-
-```{r}
-plot_heat2(msig$gene_id[1:min(100, length(msig$gene_id))])
-```
-
-##### Boxplots for top-10
-
-```{r}
-walk(msig$gene_id[1:min(10, length(msig$gene_id))], plot_box)
+if(nrow(msig) > 0) walk(msig$gene_id[1:min(10, length(msig$gene_id))], plot_box)
 ```
 
 #### All tissues {.tabset .tabset-fade .tabset-pills}
@@ -1231,19 +813,29 @@ walk(msig$gene_id[1:min(10, length(msig$gene_id))], plot_box)
 ```{r}
 ## Function to create a df with genes significant in multiple focal contrasts
 multisig_time <- function(DE_df, ftissue) {
-  DE_df %>%
+  msig <- DE_df %>%
     mutate(timepoint = sub("\\w+(\\d\\d)", "t\\1", trt_a),
            contrast = gsub("\\d", "", contrast)) %>% 
     filter(sig == TRUE, tissue == ftissue) %>%
-    select(gene_id, lfc, padj, contrast, timepoint) %>%
-    pivot_wider(id_cols = c(gene_id, contrast),
-                names_from = timepoint,
-                values_from = c(padj, lfc)) %>%
-    mutate(padj_mean = mean(c(padj_t06, padj_t24), na.rm = TRUE)) %>% 
-    filter(!is.na(padj_t06), !is.na(padj_t24)) %>%
-    left_join(gene_df, by = "gene_id") %>%
-    arrange(padj_mean) %>%
-    select(-padj_mean)
+    select(gene_id, lfc, padj, contrast, timepoint)
+  
+  if (length(unique(msig$timepoint)) > 1) {
+    msig <- msig %>%  
+      pivot_wider(id_cols = c(gene_id, contrast),
+                  names_from = timepoint,
+                  values_from = c(padj, lfc)) %>%
+      mutate(padj_mean = mean(c(padj_t06, padj_t24), na.rm = TRUE)) %>% 
+      filter(!is.na(padj_t06), !is.na(padj_t24)) %>%
+      left_join(gene_df, by = "gene_id") %>%
+      arrange(padj_mean) %>%
+      select(-padj_mean)
+    
+    return(msig)
+  
+  } else {
+    message("Only found significant results for 1 timepoint")
+    return(data.frame())
+  }
 }
 ```
 
@@ -1287,7 +879,7 @@ bothtimes <- multisig_time(DE_res, ftissue = "ht")
 ##### Table
 
 ```{r}
-bothtimes %>% make_dt(numr_cols = c("padj_t06", "padj_t24"))
+if (nrow(bothtimes) > 0) bothtimes %>% make_dt(numr_cols = c("padj_t06", "padj_t24"))
 ```
 
 ##### Heatmap for top-100
@@ -1331,36 +923,7 @@ if (nrow(bothtimes) > 1)
 walk(bothtimes$gene_id[1:min(10, length(bothtimes$gene_id))], plot_box)
 ```
 
-#### LRT 12% {.tabset .tabset-fade .tabset-pills}
-
-<br>
-
-```{r}
-bothtimes <- multisig_time(DE_res, ftissue = "lrt12")
-```
-
-##### Table
-
-```{r}
-bothtimes %>% make_dt(numr_cols = c("padj_t06", "padj_t24"))
-```
-
-##### Heatmap for top-100
-
-```{r}
-if (nrow(bothtimes) > 1)
-    plot_heat2(bothtimes$gene_id[1:min(100, length(bothtimes$gene_id))])
-```
-
-##### Boxplots for top-10
-
-```{r}
-walk(bothtimes$gene_id[1:min(10, length(bothtimes$gene_id))], plot_box)
-```
-
 ### DE in multiple tissues {.tabset .tabset-fade .tabset-pills}
-
-LRT 12% is excluded here.
 
 <br>
 
@@ -1387,95 +950,12 @@ multisig_tissue <- function(DE_df, fcontrast) {
 }
 ```
 
-#### AKH vs Virgin -- 6 hpm {.tabset .tabset-fade .tabset-pills} 
-
-<br>
-
-```{r}
-bothtiss <- multisig_tissue(DE_res, fcontrast = "akh06_vir06")
-```
-
-##### Table
-
-```{r}
-make_dt(bothtiss, numr_cols = c("padj_ab", "padj_ht", "padj_lrt"))
-```
-
-##### Heatmap for top-100
-
-```{r}
-if (nrow(bothtiss) > 1)
-    plot_heat2(bothtiss$gene_id[1:min(100, length(bothtiss$gene_id))])
-```
-
-##### Boxplots for top-10
-
-```{r}
-walk(bothtiss$gene_id[1:min(10, length(bothtiss$gene_id))], plot_box)
-```
-
 #### LVP vs Virgin -- 6 hpm {.tabset .tabset-fade .tabset-pills}
 
 <br>
 
 ```{r}
 bothtiss <- multisig_tissue(DE_res, fcontrast = "lvp06_vir06")
-```
-
-##### Table
-
-```{r}
-make_dt(bothtiss, numr_cols = c("padj_ab", "padj_ht", "padj_lrt"))
-```
-
-##### Heatmap for top-100
-
-```{r}
-if (nrow(bothtiss) > 1)
-    plot_heat2(bothtiss$gene_id[1:min(100, length(bothtiss$gene_id))])
-```
-
-##### Boxplots for top-10
-
-```{r}
-if (nrow(bothtiss) > 0)
-  walk(bothtiss$gene_id[1:min(10, length(bothtiss$gene_id))], plot_box)
-```
-
-#### LVP vs AKH -- 6 hpm {.tabset .tabset-fade .tabset-pills}
-
-<br>
-
-```{r}
-bothtiss <- multisig_tissue(DE_res, fcontrast = "lvp06_akh06")
-```
-
-##### Table
-
-```{r}
-make_dt(bothtiss, numr_cols = c("padj_ab", "padj_ht", "padj_lrt"))
-```
-
-##### Heatmap for top-100
-
-```{r}
-if (nrow(bothtiss) > 1)
-    plot_heat2(bothtiss$gene_id[1:min(100, length(bothtiss$gene_id))])
-```
-
-##### Boxplots for top-10
-
-```{r}
-if (nrow(bothtiss) > 0)
-  walk(bothtiss$gene_id[1:min(10, length(bothtiss$gene_id))], plot_box)
-```
-
-#### AKH vs Virgin -- 24 hpm {.tabset .tabset-fade .tabset-pills}
-
-<br>
-
-```{r}
-bothtiss <- multisig_tissue(DE_res, fcontrast = "akh24_vir24")
 ```
 
 ##### Table
@@ -1526,89 +1006,79 @@ if (nrow(bothtiss) > 0)
   walk(bothtiss$gene_id[1:min(10, length(bothtiss$gene_id))], plot_box)
 ```
 
-#### LVP vs AKH -- 24 hpm {.tabset .tabset-fade .tabset-pills}
-
 <br>
 
-```{r}
-bothtiss <- multisig_tissue(DE_res, fcontrast = "lvp24_akh24")
-```
+-----
 
-##### Table
+## Venn diagrams
 
-```{r}
-make_dt(bothtiss, numr_cols = c("padj_ab", "padj_ht", "padj_lrt"))
-```
-
-##### Heatmap for top-100
-
-```{r}
-if (nrow(bothtiss) > 1)
-    plot_heat2(bothtiss$gene_id[1:min(100, length(bothtiss$gene_id))])
-```
-
-##### Boxplots for top-10
-
-```{r}
-if (nrow(bothtiss) > 0)
-  walk(bothtiss$gene_id[1:min(10, length(bothtiss$gene_id))], plot_box)
-```
-
-### Venn diagrams of DEG overlap {.tabset .tabset-fade .tabset-pills}
+### DEG overlap across times {.tabset .tabset-fade .tabset-pills}
 
 ```{r}
 ## Function to get a vector with significantly DE genes for a pairwise contrast
-get_genes <- function(fcontrast, ftissue, DE_df) {
-  DE_df %>% 
-    filter(sig == TRUE, tissue == ftissue, contrast == fcontrast) %>%
-    pull(gene_id)
+get_genes <- function(fcontrast, ftissue, direction = "both",
+                      DE_df) {
+  DE_df <- DE_df %>% 
+    filter(sig == TRUE, tissue == ftissue, contrast == fcontrast)
+  if (direction == "up") DE_df <- DE_df %>% filter(lfc > 0)
+  if (direction == "down") DE_df <- DE_df %>% filter(lfc < 0)
+  
+  DE_df %>% pull(gene_id)
 }
 ```
 
 #### Abdomen
 
 ```{r, results="hide"}
-DE_genes <- map(.x = contrasts[1:4], .f = get_genes,
+DE_genes <- map(.x = contrasts, .f = get_genes,
                 ftissue = "ab", DE_df = DE_res)
-names(DE_genes) <- contrast_names[1:4]
+names(DE_genes) <- contrast_labs
 
-p <- venn.diagram(x = DE_genes, fill = my_cols, 
+p <- venn.diagram(x = DE_genes, fill = contrast_cols, 
                   filename = NULL, output = TRUE, disable.logging = TRUE,
                   margin = 0.05, cat.cex = 0.9, cat.fontface = "bold")
 grid::grid.draw(p)
 ```
-
-<br>
-
-----
 
 #### Head & thorax
 
 ```{r, results="hide"}
-DE_genes <- map(.x = contrasts[1:4], .f = get_genes,
+DE_genes <- map(.x = contrasts, .f = get_genes,
                 ftissue = "ht", DE_df = DE_res)
-names(DE_genes) <- contrast_names[1:4]
+names(DE_genes) <- contrast_labs
 
-p <- venn.diagram(x = DE_genes, fill = my_cols, 
+p <- venn.diagram(x = DE_genes, fill = contrast_cols, 
                   filename = NULL, output = TRUE, disable.logging = TRUE,
                   margin = 0.05, cat.cex = 0.9, cat.fontface = "bold")
 grid::grid.draw(p)
 ```
-
-<br>
-
-----
 
 #### LRT (3%)
 
 ```{r, results="hide"}
-DE_genes <- map(.x = contrasts[1:4], .f = get_genes,
+DE_genes <- map(.x = contrasts, .f = get_genes,
                 ftissue = "lrt", DE_df = DE_res)
-names(DE_genes) <- contrast_names[1:4]
+names(DE_genes) <- contrast_labs
 
-p <- venn.diagram(x = DE_genes, fill = my_cols, 
+p <- venn.diagram(x = DE_genes, fill = contrast_cols, 
                   filename = NULL, output = TRUE, disable.logging = TRUE,
                   margin = 0.05, cat.cex = 0.9, cat.fontface = "bold")
+grid::grid.draw(p)
+```
+
+### DEG overlap across tissues {.tabset .tabset-fade .tabset-pills}
+
+#### 6 hpm - all
+
+```{r, results="hide"}
+DE_genes <- map(.x = tissues, .f = get_genes,
+                fcontrast = "lvp06_vir06", DE_df = DE_res)
+names(DE_genes) <- tissue_labs
+
+p <- venn.diagram(x = DE_genes, fill = tissue_cols, 
+                  filename = NULL, output = TRUE, disable.logging = TRUE,
+                  margin = 0.05, cat.cex = 1.5, cat.fontface = "bold",
+                  cat.pos = 0, cex = 1.5, fontface = "bold")
 grid::grid.draw(p)
 ```
 
@@ -1616,16 +1086,91 @@ grid::grid.draw(p)
 
 ----
 
-#### LRT 12%
+#### 6 hpm - up
 
 ```{r, results="hide"}
-DE_genes <- map(.x = contrasts[1:4], .f = get_genes,
-                ftissue = "lrt12", DE_df = DE_res)
-names(DE_genes) <- contrast_names[1:4]
+DE_genes <- map(.x = tissues, .f = get_genes, direction = "up",
+                fcontrast = "lvp06_vir06", DE_df = DE_res)
+names(DE_genes) <- tissue_labs
 
-p <- venn.diagram(x = DE_genes, fill = my_cols, 
+p <- venn.diagram(x = DE_genes, fill = tissue_cols, 
                   filename = NULL, output = TRUE, disable.logging = TRUE,
-                  margin = 0.05, cat.cex = 0.9, cat.fontface = "bold")
+                  margin = 0.05, cat.cex = 1.5, cat.fontface = "bold",
+                  cat.pos = 0, cex = 1.5, fontface = "bold")
+grid::grid.draw(p)
+```
+
+<br>
+
+----
+
+#### 6 hpm - down
+
+```{r, results="hide"}
+DE_genes <- map(.x = tissues, .f = get_genes, direction = "down",
+                fcontrast = "lvp06_vir06", DE_df = DE_res)
+names(DE_genes) <- tissue_labs
+
+p <- venn.diagram(x = DE_genes, fill = tissue_cols, 
+                  filename = NULL, output = TRUE, disable.logging = TRUE,
+                  margin = 0.05, cat.cex = 1.5, cat.fontface = "bold",
+                  cat.pos = c(0, 0, 180), cex = 1.5, fontface = "bold")
+grid::grid.draw(p)
+```
+
+<br>
+
+----
+
+#### 24 hpm - all
+
+```{r, results="hide"}
+DE_genes <- map(.x = tissues, .f = get_genes,
+                fcontrast = "lvp24_vir24", DE_df = DE_res)
+names(DE_genes) <- tissue_labs
+
+p <- venn.diagram(x = DE_genes, fill = tissue_cols, 
+                  filename = NULL, output = TRUE, disable.logging = TRUE,
+                  margin = 0.05, cat.cex = 1.5, cat.fontface = "bold",
+                  cex = 1.5, fontface = "bold")
+grid::grid.draw(p)
+```
+
+<br>
+
+----
+
+#### 24 hpm - up
+
+```{r, results="hide"}
+DE_genes <- map(.x = tissues, .f = get_genes, direction = "up",
+                fcontrast = "lvp24_vir24", DE_df = DE_res)
+names(DE_genes) <- tissue_labs
+
+p <- venn.diagram(x = DE_genes, fill = tissue_cols, 
+                  filename = NULL, output = TRUE, disable.logging = TRUE,
+                  margin = 0.05, cat.cex = 1.5, cat.fontface = "bold",
+                  cat.pos = c(0, 0, 180), cex = 1.5, fontface = "bold")
+grid::grid.draw(p)
+```
+
+<br>
+
+----
+
+#### 24 hpm - down
+
+Lower expression levels in mated.
+
+```{r, results="hide"}
+DE_genes <- map(.x = tissues, .f = get_genes, direction = "down",
+                fcontrast = "lvp24_vir24", DE_df = DE_res)
+names(DE_genes) <- tissue_labs
+
+p <- venn.diagram(x = DE_genes, fill = tissue_cols, 
+                  filename = NULL, output = TRUE, disable.logging = TRUE,
+                  margin = 0.05, cat.cex = 1.5, cat.fontface = "bold",
+                  cat.pos = c(0, 0, 180), cex = 1.5, fontface = "bold")
 grid::grid.draw(p)
 ```
 
@@ -1638,9 +1183,9 @@ grid::grid.draw(p)
 ### Barplot of DEGs
 
 ```{r}
-DE_lrt <- DE_res %>%
+DE_lrt <- DE_res_all %>%
   filter(tissue %in% c("lrt", "lrt12"),
-         contrast %in% contrasts[1:4],
+         contrast %in% contrasts_all[1:4],
          sig == TRUE) %>%
   select(gene_id, contrast, padj, tissue) %>%
   pivot_wider(id_cols = c(gene_id, contrast),
@@ -1658,7 +1203,7 @@ DE_lrt %>%
   ggplot(aes(x = contrast, fill = tissue)) +
   geom_bar(position = "dodge", color = "grey40") +
   scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
-  scale_x_discrete(labels = contrast_names) +
+  scale_x_discrete(labels = contrast_labs) +
   scale_fill_brewer(palette = "Set1",
                     labels = c("3%", "12%", "both"),
                     name = "Sugar water") +
@@ -1673,13 +1218,15 @@ DE_lrt %>%
 list_sugar <- function(fcontrast, DE_df) {
   sug03 <- DE_df %>%
     filter(sig == TRUE, contrast == fcontrast, tissue == "lrt") %>%
-    pull(gene_id)
+    pull(gene_id) %>%
+    unique()
   sug12 <- DE_df %>%
     filter(sig == TRUE, contrast == fcontrast, tissue == "lrt12") %>%
-    pull(gene_id)
+    pull(gene_id) %>%
+    unique()
   
   genes_list <- list(sug03, sug12)
-  names(genes_list) <- c("12%", "3%") 
+  names(genes_list) <- c("3%", "12%") 
   return(genes_list)
 }
 ```
@@ -1688,29 +1235,15 @@ list_sugar <- function(fcontrast, DE_df) {
 venn_sugar <- function(fcontrast, DE_df) {
   genes_list <- list_sugar(fcontrast, DE_df)
   if (all(lengths(genes_list) > 0)) {
-    p <- venn.diagram(x = genes_list, #main = fcontrast,
-                      fill = my_cols[1:2],
-                      cat.cex = 1.3, cat.fontface = "bold",
-                      cat.pos = 0, cat.dist = 0.015,
-                      main.cex = 1.6, cex = 1.3,
+    p <- venn.diagram(x = genes_list,
+                      fill = contrast_cols,
+                      cat.cex = 2, cat.fontface = "bold",
+                      cat.pos = 0, cat.dist = 0.025,
+                      main.cex = 1.6, cex = 2,
                       filename = NULL, disable.logging = TRUE)
     grid::grid.draw(p)
   }
 }
-```
-
-#### AKH vs Virgin -- 6 hpm
-
-```{r, results="hide", out.width="60%"}
-venn_sugar(contrasts[1], DE_res)
-```
-
-<br>
-
-#### AKH vs Virgin -- 24 hpm
-
-```{r, results="hide", out.width="60%"}
-venn_sugar(contrasts[2], DE_res)
 ```
 
 <br>
@@ -1718,7 +1251,7 @@ venn_sugar(contrasts[2], DE_res)
 #### LVP vs Virgin -- 6 hpm
 
 ```{r, results="hide", out.width="60%"}
-venn_sugar(contrasts[3], DE_res)
+venn_sugar(contrasts[1], DE_res_all)
 ```
 
 <br>
@@ -1726,7 +1259,7 @@ venn_sugar(contrasts[3], DE_res)
 #### LVP vs Virgin -- 24 hpm
 
 ```{r, results="hide", out.width="60%"}
-venn_sugar(contrasts[4], DE_res)
+venn_sugar(contrasts[2], DE_res_all)
 ```
 
 <br>
@@ -1761,7 +1294,8 @@ sugarcomp <- function(fcontrast, DE_df) {
 
 ```{r}
 ## Table with all genes significant in 12% or 3%
-sugar_df <- map_dfr(.x = contrasts, .f = sugarcomp, DE_res)
+sugar_df <- map_dfr(.x = contrasts, .f = sugarcomp,
+                    DE_res_all %>% filter(!grepl("akh", contrast)))
 ```
 
 #### Table
@@ -1784,6 +1318,30 @@ if (nrow(sugar_df) > 1)
 walk(sugar_df$gene_id[1:min(10, length(sugar_df$gene_id))], plot_box)
 ```
 
+### DEGs at 3% only
+
+```{r}
+DE_sel <- DE_res_all %>% select(-contrast_full, -trt_a, -trt_b, -sugar, -pvalue)
+sug03_6hpm <- DE_sel %>% filter(sig == TRUE, contrast == "lvp06_vir06", tissue == "lrt")
+sug12_6hpm <- DE_sel %>% filter(sig == TRUE, contrast == "lvp06_vir06", tissue == "lrt12")
+sug03_24hpm <- DE_sel %>% filter(sig == TRUE, contrast == "lvp24_vir24", tissue == "lrt")
+sug12_24hpm <- DE_sel %>% filter(sig == TRUE, contrast == "lvp24_vir24", tissue == "lrt12")
+```
+
+```{r}
+sug03_only <- bind_rows(anti_join(sug03_6hpm, sug12_6hpm, by = "gene_id"),
+                        anti_join(sug03_24hpm, sug12_24hpm, by = "gene_id"))
+sug03_only %>% select(-sig, -tissue) %>% make_dt(numr_cols = c("lfc", "padj"))
+```
+
+### DEGs at 12% only
+
+```{r}
+sug12_only <- bind_rows(anti_join(sug12_6hpm, sug03_6hpm, by = "gene_id"),
+                        anti_join(sug12_24hpm, sug03_24hpm, by = "gene_id"))
+sug12_only %>% select(-sig, -tissue) %>% make_dt(numr_cols = c("lfc", "padj"))
+```
+
 ### LFC correlations
 
 Each point shows, for a single gene, the log-fold change values for a pairwise
@@ -1796,9 +1354,14 @@ p <- sugar_df %>%
                          Description: {description}
                          Contrast: {contrast}"))) +
   geom_point() +
-  scale_color_brewer(palette = "Dark2") +
-  labs(x = "Log-fold change - at 3%", y = "Log-fold change - at 12%") +
-  theme_bw(base_size = 14)
+  geom_hline(yintercept = 0, color = "grey20") +
+  geom_vline(xintercept = 0, color = "grey20") +
+  scale_color_brewer(palette = "Dark2", labels = contrast_labs) +
+  theme_bw(base_size = 14) +
+  labs(x = "Log-fold change - at 3%",
+       y = "Log-fold change - at 12%",
+       color = "timepoint")
 
-ggplotly(p, tooltip = "text")
+p
+#ggplotly(p, tooltip = "text")
 ```
