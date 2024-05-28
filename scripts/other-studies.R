@@ -7,7 +7,7 @@ packages <- c("tidyverse",        # Misc. data manipulation and plotting
 pacman::p_load(char = packages)
 
 ## Define input files
-indir_comp <- here("refdata/other-studies")
+indir_comp <- here("data/refdata/other-studies")
 
 alfpar_basename <- "Alfonso-Parra2016_LRT_updated-from-Amaro.xlsx"
 alonso_basename <- "41598_2019_52268_Alonso et al 2019 HT_10%.xlsx"

@@ -1,8 +1,8 @@
 ---
 title: |
   | _Aedes aegypti_ mRNA expression --
-  | Gene ontology analyses
-pagetitle: "Enrichment results"
+  | KEGG pathway analyses
+pagetitle: "KEGG results"
 author: "Jelmer Poelstra (poelstra.1@osu.edu), MCIC Wooster, OSU"
 date: "`r Sys.Date()`"
 output:
@@ -49,6 +49,7 @@ pacman::p_load(char = packages)
 ```{r}
 ## Scripts with functions
 source(here("scripts/GO_fun.R"))
+source(here("scripts/kegg_fun.R"))
 source(here("scripts/report_funs.R"))
 ```
 
@@ -71,9 +72,9 @@ indir_DE <- here("results", "DE")
 DE_file <- here(indir_DE, "DE_all.txt")
 gene_file <- here(indir_DE, "gene_info.txt")
 
-indir_GO <- here("results", "GO")
-GO_res_file <- here(indir_GO, "GO_all.txt")
-GO_map_file <- here(indir_GO, "GO_map.txt")
+indir_kegg <- here("results", "kegg")
+kegg_res_file <- here(indir_kegg, "kegg_all.txt")
+kegg_map_file <- here(indir_kegg, "kegg_map.txt")
 ```
 
 ```{r}
@@ -98,21 +99,24 @@ DE_res <- read_tsv(DE_file, show_col_types = FALSE) %>%
 
 ```{r}
 ## Read input files 2
-GO_map <- read_tsv(GO_map_file, show_col_types = FALSE)
+kegg_map <- read_tsv(kegg_map_file, show_col_types = FALSE) %>%
+  rename(gene_id = geneID,
+         category = KEGG_pathway)
 
-GO_res <- read_tsv(GO_res_file, show_col_types = FALSE) %>%
-  filter(category != "GO:0055114") %>%  # Remove obsolete GO category
-  mutate(description = str_trunc(description, width = 50),
+kegg_res <- read_tsv(kegg_res_file, show_col_types = FALSE) %>%
+  rename(numDEInCat = count) %>% 
+  mutate(description = sub(" - Aedes.*", "", description),
+         description = str_trunc(description, width = 50),
+         description = str_wrap(description, width = 20),
+         contrast = sub("lrt10", "lrt12", contrast),
          contrast_full = contrast,
-         sig = ifelse(padj < 0.05 & numDEInCat > 1, TRUE, FALSE),
+         sig = ifelse(padj < 0.05, TRUE, FALSE),
          tissue = sub(".*\\d\\d_(\\w+)$", "\\1", contrast),
          contrast = sub("(.*_.*)_\\w+$", "\\1", contrast)) %>% 
   filter(contrast %in% contrasts)           # Only select focal contrasts!
 
-GO_sig <- GO_res %>% filter(sig == TRUE)
-
-GO_lookup <- GO_res %>%
-  select(category, ontology, description) %>% 
+kegg_lookup <- kegg_res %>%
+  select(category, description) %>% 
   distinct()
 ```
 
@@ -127,6 +131,16 @@ contrast_df <- DE_res %>%
   select(contrast_full, contrast, trt_a, trt_b, tissue, sugar, time_contrast)
 ```
 
+```{r, include=FALSE}
+## Nr of genes with and without a KEGG annotation (added 2022-12-14)
+length(unique(kegg_map$gene_id)) # 2,340
+length(unique(DE_res$gene_id))   # 18,178
+
+sig_genes <- DE_res %>% filter(sig == TRUE) %>% pull(gene_id) %>% unique()
+length(sig_genes)                # 961
+sum(sig_genes %in% unique(kegg_map$gene_id))  # 197
+```
+
 <br>
 
 -----
@@ -134,41 +148,22 @@ contrast_df <- DE_res %>%
 ## Methods
 
 The R/Bioconductor package
-[`GOseq`](https://bioconductor.org/packages/release/bioc/html/goseq.html)
-was used to test for GO term enrichment among differentially expressed genes
+[clusterProfiler 4.4.4](https://www.cell.com/the-innovation/fulltext/S2666-6758(21)00066-7)
+was used to test for KEGG pathway enrichment among differentially expressed genes
 for each pairwise contrast.
-Gene Ontology assignments to genes were extracted from a VectorBase GAF
-file available
-[here](https://vectorbase.org/vectorbase/app/downloads/release-49/AaegyptiLVP_AGWG/gaf/).
-Gene lengths are used in the statistical model of `GOseq`,
-and there were extracted from a VectorBase GFF file available
-[here](https://vectorbase.org/vectorbase/app/downloads/release-49/AaegyptiLVP_AGWG/gff/data/).
 P-values were corrected for multiple testing using the Benjamini-Hochberg
 correction.
-
-**Added notes 2021-02-19**
-- GO category `GO:0055114`, which was present in earlier versions of this document,
-  was removed because it is an obsolete category.
-  This category was related to oxidation-reduction which is now reflected by
-  `GO:0016491` (oxidoreductase activity).
-  
-**Added notes 2021-04-24**  
-- In some cases, a GO category is nominally significant even though only a single
-  gene in the category is DE.
-  I am now requiring that there are at least 2 DEGs
-  (in addition to an adjusted p-value below 0.05) for a GO category to be significant.
-
 
 <br>
 
 -----
 
-## Nr significant GO terms per contrast
+## Nr significant pathways per contrast
 
 <br>
 
 ```{r}
-sig_by_comp <- GO_sig %>%
+sig_by_comp <- kegg_res %>%
   group_by(contrast, tissue, direction, .drop = FALSE) %>%
   count(name = "nsig") %>%
   ungroup() %>%
@@ -186,12 +181,11 @@ sig_by_comp %>%
   make_kable()
 ```
 
-
 <br>
 
 -----
 
-## All significant GO terms {.tabset .tabset-fade .tabset-pills}
+## All significant pathways {.tabset .tabset-fade .tabset-pills}
 
 <br>
 
@@ -200,7 +194,7 @@ sig_by_comp %>%
 <br>
 
 ```{r}
-sig_smr <- pivot_wider(GO_sig %>% filter(direction == "both"),
+sig_smr <- pivot_wider(kegg_res %>% filter(direction == "both"),
                        id_cols = c(category, description),
                        names_from = contrast_full,
                        values_from = padj)
@@ -218,7 +212,7 @@ make_dt(sig_smr, numr_cols = numr_cols)
 <br>
 
 ```{r}
-sig_smr <- pivot_wider(GO_sig %>% filter(direction == "up"),
+sig_smr <- pivot_wider(kegg_res %>% filter(direction == "up"),
                        id_cols = c(category, description),
                        names_from = contrast_full,
                        values_from = padj)
@@ -236,7 +230,7 @@ make_dt(sig_smr, numr_cols = numr_cols)
 <br>
 
 ```{r}
-sig_smr <- pivot_wider(GO_sig %>% filter(direction == "down"),
+sig_smr <- pivot_wider(kegg_res %>% filter(direction == "down"),
                        id_cols = c(category, description),
                        names_from = contrast_full,
                        values_from = padj)
@@ -249,33 +243,48 @@ make_dt(sig_smr, numr_cols = numr_cols)
 
 -----
 
-## All DEGS in significant GO terms {.tabset .tabset-fade .tabset-pills}
+## All DEGS in significant KEGG terms {.tabset .tabset-fade .tabset-pills}
 
 <br>
 
 ```{r}
-get_go_degs <- function(fcontrast, direction,
-                        GO_map, GO_sig, DE_res, gene_df) {
+get_kegg_degs <- function(fcontrast, fdirection,
+                          kegg_map, kegg_res, DE_res, gene_df) {
   
-  fGO_sig <- GO_sig %>%
+  message("Contrast: ", fcontrast, " / Direction: ", fdirection)
+  
+  fkegg_res <- kegg_res %>%
     filter(contrast_full == fcontrast,
-           direction == direction) %>%
+           direction == fdirection) %>%
     select(-sig, -contrast_full) %>%
-    rename(description_GO = description)
+    rename(description_kegg = description)
   
-  DEGs <- DE_res %>%
-    filter(contrast_full == fcontrast,
-           padj < 0.05) %>%
-    pull(gene_id)
+  if (nrow(fkegg_res) == 0) return(NULL)
   
-  GO_sig_wgenes <- GO_map %>% 
-    filter(gene_id %in% DEGs,
-           go_term %in% fGO_sig$category) %>%
-    full_join(fGO_sig, ., by = c("category" = "go_term")) %>% 
+  kegg_res_wgenes <- fkegg_res %>%
+    separate_wider_delim(gene_ids, delim = "/", names_sep = "_",
+                         too_few = "align_start") %>% #, too_many = "debug"
+    pivot_longer(cols = starts_with("gene_ids_"),
+                 names_to = NULL, values_to = "gene_id",
+                 values_drop_na = TRUE) %>%
     left_join(gene_df, by = "gene_id") %>%
-    rename(description_gene = description) %>% 
-    select(-DE_in_cat, -numInCat) %>% 
-    relocate(tissue, .after = contrast)
+    rename(description_gene = description) %>%
+    relocate(tissue, .after = contrast) %>%
+    relocate(gene_id, description_gene, .after = direction)
+    
+  #DEGs <- DE_res %>%
+  #  filter(contrast_full == fcontrast, padj < 0.05) %>%
+  #  pull(gene_id)
+  
+  #kegg_res_wgenes <- kegg_map %>%
+  #  filter(gene_id %in% DEGs,
+  #         category %in% fkegg_res$category) %>%
+  #  full_join(fkegg_res, ., by = "category") %>% 
+  #  left_join(gene_df, by = "gene_id") %>%
+  #  rename(description_gene = description) %>%
+  #  select(-gene_ids) %>% 
+  #  relocate(tissue, .after = contrast) %>%
+  #  relocate(gene_id, description_gene, .after = direction)
 }
 ```
 
@@ -284,10 +293,10 @@ get_go_degs <- function(fcontrast, direction,
 <br>
 
 ```{r}
-go_degs <- map_dfr(contrasts_full, get_go_degs,
-                   direction = "both",
-                   GO_map, GO_sig, DE_res, gene_df)
-make_dt(go_degs)
+kegg_degs <- map_dfr(.x = contrasts_full, .f = get_kegg_degs,
+                     fdirection = "both",
+                     kegg_map, kegg_res, DE_res, gene_df)
+make_dt(kegg_degs)
 ```
 
 <br>
@@ -299,23 +308,23 @@ make_dt(go_degs)
 <br>
 
 ```{r}
-go_degs <- map_dfr(contrasts_full, get_go_degs,
-                   direction = "up",
-                   GO_map, GO_sig, DE_res, gene_df)
-make_dt(go_degs)
+kegg_degs <- map_dfr(.x = contrasts_full, .f = get_kegg_degs,
+                     fdirection = "up",
+                     kegg_map, kegg_res, DE_res, gene_df)
+make_dt(kegg_degs)
 ```
 
 <br>
 
 -----
 
-#### Downregulated after mating
+### Downregulated after mating
 
 ```{r}
-go_degs <- map_dfr(contrasts_full, get_go_degs,
-                   direction = "down",
-                   GO_map, GO_sig, DE_res, gene_df)
-make_dt(go_degs)
+kegg_degs <- map_dfr(.x = contrasts_full, .f = get_kegg_degs,
+                     fdirection = "down",
+                     kegg_map, kegg_res, DE_res, gene_df)
+make_dt(kegg_degs)
 ```
 
 <br>
@@ -334,11 +343,40 @@ make_dt(go_degs)
 
 <br>
 
+### All
+
+```{r, fig.height = 6, out.width="100%"}
+df <- prep_goplot(kegg_res, tissues = tissues, contrasts = contrasts) %>%
+  mutate(contrast = sub("_ht.*|_lrt.*|_ab.*", "", contrast),
+         tissue = sub("lrt12", "LRT 12%", tissue),
+         tissue = sub("lrt", "LRT 3%", tissue),
+         tissue = sub("ht", "HT", tissue),
+         tissue = sub("ab", "Ab", tissue),
+         tissue = factor(tissue,
+                         levels = c("Ab", "HT", "LRT 3%", "LRT 12%"))) %>%
+  filter(!is.na(padj)) %>%
+  select(-padj, -category, -direction, -sig)
+
+df %>%
+  expand(description, tissue, contrast) %>%
+  left_join(.,
+            df %>% select(description) %>% distinct(),
+            by = "description") %>% 
+  left_join(df, by = c("description", "tissue", "contrast")) %>%
+  goplot(type = "kegg", facet_var = "tissue",
+         ylabsize = 10, numDE_size = 3.5) +
+  scale_x_discrete(labels = contrast_labs)
+```
+
+<br>
+
+-----
+
 ### Abdomen
 
 ```{r, fig.height = 6, out.width="100%"}
-prep_goplot(GO_res, tissues = "ab", contrasts) %>%
-  goplot(ylabsize = 7) +
+prep_goplot(kegg_res, tissues = "ab", contrasts) %>%
+  goplot(type = "kegg", numDE_size = 3.5) +
   scale_x_discrete(labels = contrast_labs)
 ```
 
@@ -349,8 +387,8 @@ prep_goplot(GO_res, tissues = "ab", contrasts) %>%
 ### Head & thorax
 
 ```{r, out.width="100%"}
-prep_goplot(GO_res, tissues = "ht", contrasts) %>%
-  goplot() +
+prep_goplot(kegg_res, tissues = "ht", contrasts) %>%
+  goplot(type = "kegg", numDE_size = 3.5) +
   scale_x_discrete(labels = contrast_labs)
 ```
 
@@ -361,8 +399,8 @@ prep_goplot(GO_res, tissues = "ht", contrasts) %>%
 ### LRT (3%)
 
 ```{r, fig.height = 6, out.width="100%"}
-prep_goplot(GO_res, tissues = "lrt", contrasts) %>%
-  goplot(ylabsize = 7) +
+prep_goplot(kegg_res, tissues = "lrt", contrasts) %>%
+  goplot(type = "kegg", numDE_size = 3.5) +
   scale_x_discrete(labels = contrast_labs)
 ```
 
@@ -373,15 +411,36 @@ prep_goplot(GO_res, tissues = "lrt", contrasts) %>%
 ### LRT 12%
 
 ```{r, fig.height = 6, out.width="100%"}
-prep_goplot(GO_res, tissues = "lrt12", contrasts) %>% 
-  goplot(ylabsize = 7) +
+prep_goplot(kegg_res, tissues = "lrt12", contrasts) %>% 
+  goplot(type = "kegg", numDE_size = 3.5) +
   scale_x_discrete(labels = contrast_labs)
 ```
 
-```{r, fig.height = 8, out.width="100%"}
-# #### All tissues
-#prep_goplot(GO_res, tissues = tissues, contrasts) %>%
-#   goplot(ylabsize = 5)
+<br>
+
+-----
+
+### LRT 3% + 12%
+
+```{r, fig.height = 6, out.width="100%"}
+df <- prep_goplot(kegg_res, tissues = c("lrt", "lrt12"),
+                  contrasts = contrasts) %>%
+  mutate(contrast = sub("_lrt.*|_ab.*", "", contrast),
+         tissue = sub("lrt12", "LRT 12%", tissue),
+         tissue = sub("lrt", "LRT 3%", tissue),
+         tissue = factor(tissue, levels = c("LRT 3%", "LRT 12%"))) %>%
+  filter(!is.na(padj)) %>%
+  select(-padj, -category, -direction, -sig)
+
+df %>%
+  expand(description, tissue, contrast) %>%
+  left_join(.,
+            df %>% select(description) %>% distinct(),
+            by = "description") %>% 
+  left_join(df, by = c("description", "tissue", "contrast")) %>%
+  goplot(type = "kegg", facet_var = "tissue",
+         ylabsize = 8.5, numDE_size = 3.5) +
+  scale_x_discrete(labels = contrast_labs)
 ```
 
 <br>
@@ -407,50 +466,53 @@ If omitted the DEG count labels for this plot because they were too squished
 due to the high number of GO categories.
 
 ```{r, fig.height = 6, out.width="100%"}
-prep_goplot(GO_res, tissues = "ab", contrasts = contrasts,
+prep_goplot(kegg_res, tissues = "ab", contrasts = contrasts,
             directions = c("up", "down")) %>%
   complete(category, contrast, direction) %>% 
-  select(-ontology, -description) %>%
-  left_join(GO_lookup, by = "category") %>% 
+  select(-description) %>%
+  left_join(kegg_lookup, by = "category") %>% 
   mutate(contrast = ifelse(contrast == "lvp06_vir06", "06 hpm", "24 hpm")) %>% 
-  goplot(x_var = "direction", facet_var = "contrast",
-         label_count = FALSE, ylabsize = 7)
+  goplot(type = "kegg", x_var = "direction", facet_var = "contrast",
+         numDE_size = 3.5)
 ```
 
 ### Head & thorax
 
 ```{r, fig.height = 6, out.width="100%"}
-prep_goplot(GO_res, tissues = "ht", contrasts = contrasts,
+prep_goplot(kegg_res, tissues = "ht", contrasts = contrasts,
             directions = c("up", "down")) %>%
   complete(category, contrast, direction) %>% 
-  select(-ontology, -description) %>%
-  left_join(GO_lookup, by = "category") %>% 
+  select(-description) %>%
+  left_join(kegg_lookup, by = "category") %>% 
   mutate(contrast = ifelse(contrast == "lvp06_vir06", "06 hpm", "24 hpm")) %>% 
-  goplot(x_var = "direction", facet_var = "contrast", ylabsize = 7)
+  goplot(type = "kegg", x_var = "direction", facet_var = "contrast",
+         numDE_size = 3.5)
 ```
 
 ### LRT 3%
 
 ```{r, fig.height = 6, out.width="100%"}
-prep_goplot(GO_res, tissues = "lrt", contrasts = contrasts,
+prep_goplot(kegg_res, tissues = "lrt", contrasts = contrasts,
             directions = c("up", "down")) %>%
   complete(category, contrast, direction) %>% 
-  select(-ontology, -description) %>%
-  left_join(GO_lookup, by = "category") %>% 
+  select(-description) %>%
+  left_join(kegg_lookup, by = "category") %>% 
   mutate(contrast = ifelse(contrast == "lvp06_vir06", "06 hpm", "24 hpm")) %>% 
-  goplot(x_var = "direction", facet_var = "contrast", ylabsize = 7)
+  goplot(type = "kegg", x_var = "direction", facet_var = "contrast",
+         numDE_size = 3.5)
 ```
 
 ### LRT 12%
 
 ```{r, fig.height = 6, out.width="100%"}
-prep_goplot(GO_res, tissues = "lrt12", contrasts = contrasts,
+prep_goplot(kegg_res, tissues = "lrt12", contrasts = contrasts,
             directions = c("up", "down")) %>%
   complete(category, contrast, direction) %>% 
-  select(-ontology, -description) %>%
-  left_join(GO_lookup, by = "category") %>% 
+  select(-description) %>%
+  left_join(kegg_lookup, by = "category") %>% 
   mutate(contrast = ifelse(contrast == "lvp06_vir06", "06 hpm", "24 hpm")) %>% 
-  goplot(x_var = "direction", facet_var = "contrast", ylabsize = 7)
+  goplot(type = "kegg", x_var = "direction", facet_var = "contrast",
+         numDE_size = 3.5)
 ```
 
 <br>

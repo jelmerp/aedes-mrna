@@ -181,6 +181,7 @@ gene_df <- read_tsv(gene_file, show_col_types = FALSE) %>%
   mutate(description = str_trunc(description, width = 40))
 
 DE_res <- read_tsv(DE_file, show_col_types = FALSE) %>%
+  filter(sugar == "sug03") %>% 
   mutate(tissue = sub(".*\\d(\\w+)", "\\1", treat_a),
          tissue = ifelse(sugar == "sug10", "lrt10", tissue),
          trt_a = sub("(.*\\d+)\\w+", "\\1", treat_a),
@@ -218,13 +219,21 @@ wide_all <- long_all %>%
   bind_rows(pascini %>% mutate(hpm = 24)) %>%     # Copy of Pascini => 24 hpm
   bind_rows(alonso %>% mutate(hpm = 24)) %>%      # Copy of Alonso => 24 hpm
   mutate(study = factor(study, study_levels)) %>% 
-  arrange(study) %>% 
+  arrange(study) %>%
+  #filter(gene_id == "AAEL000001", hpm == 6, study == "ours")
   pivot_wider(id_cols = c(gene_id, hpm),
               values_from = c(lfc, padj), names_from = study) %>%
   left_join(gene_df, by = "gene_id") %>%
   relocate(description, .after = gene_id) %>%
   relocate(contains("padj"), .after = hpm) %>% 
   arrange(gene_id)
+```
+
+```{r}
+#   gene_id      lfc  padj   hpm study
+#   <chr>      <dbl> <dbl> <dbl> <fct>
+# 1 AAEL000001 0.086 0.986     6 ours 
+# 2 AAEL000001 0.007 1         6 ours 
 ```
 
 ```{r}
@@ -249,17 +258,18 @@ wide_24un <- wide_all %>%             # 24 hpm ours vs other unknown
 ```{r}
 ## Create lists for Venn diagrams
 list_6strict <- list(DE6$gene_id, alfpar_6h$gene_id, camargo_6h$gene_id)
-names(list_6strict) <- c("This study", "Alfonso-Parra", "Camargo")
+names(list_6strict) <- c("This study", "Alfonso-Parra et al.", "Camargo et al.")
 
 list_6un <- list(DE6$gene_id, alonso$gene_id, pascini$gene_id)
-names(list_6un) <- c("This study", "Alonso", "Pascini")
+names(list_6un) <- c("This study", "Alonso et al.", "Pascini et al.")
 
 list_24strict <- list(DE24$gene_id, alfpar_24h$gene_id, amaro$gene_id,
                       camargo_24h$gene_id)
-names(list_24strict) <- c("This study", "Alfonso-Parra", "Amaro", "Camargo")
+names(list_24strict) <- c("This study", "Alfonso-Parra et al.",
+                          "Amaro et al.", "Camargo et al.")
 
 list_24un <- list(DE24$gene_id, alonso$gene_id, pascini$gene_id)
-names(list_24un) <- c("This study", "Alonso", "Pascini")
+names(list_24un) <- c("This study", "Alonso et al.", "Pascini et al.")
 ```
 
 ```{r}

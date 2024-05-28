@@ -1,0 +1,188 @@
+---
+title: "Gene Ontology enrichment after aggregating DEGs by time point"
+author: Jelmer Poelstra
+date: today
+format:
+  html:
+    cache: false
+    embed-resources: true
+    number-sections: true
+    toc: true
+    df-print: paged
+    fig-dpi: 300
+knitr:
+  opts_chunk:
+    message: FALSE
+    warning: FALSE
+    echo: FALSE
+    out.width: "100%"
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+# Load packages
+library(tidyverse)
+library(clusterProfiler)
+library(enrichplot)
+library(ggpubr)
+library(here)
+library(DT)
+
+# Source scripts with helper functions
+source(here("mcic-scripts/rnaseq/rfuns/enrich_funs.R"))
+source(here("scripts/report_funs.R"))
+
+# Define input files
+go_res_file <- here("results/GO/GO_agglomByTime.tsv")
+
+# Read input files
+go_res <- read_tsv(go_res_file, show_col_types = FALSE) |>
+  mutate(sig = ifelse(padj < 0.05 & numDEInCat > 1, TRUE, FALSE),
+         fold_enrich = NA,
+         mean_lfc = NA,
+         median_lfc = NA) |>
+  rename(n_DE_in_cat = numDEInCat,
+         n_DE = numDE)
+
+contrasts <- unique(go_res$contrast)
+```
+
+<br>
+
+## Introduction
+
+These are the GO enrichment results after aggregating DE genes across three tissues
+(ab, ht, lrt) by timepoint.
+
+For the purpose of this analysis,
+any gene that is significantly DE in one or more of the four tissues
+for each timepoint is counted as a DEG,
+and genes that are not significant in any of the four tissues are counted as a
+non-DEG.
+
+After that aggregating step, the enrichment analysis was done the same way
+as previously.
+
+As previously, the enrichment test was done 3 times for each 'contrast'
+(here, for each of the two timepoints):
+
+- With all DEGs (`DE_direction` = "**both**")
+- With DEGs more highly expressed in LVP than VIR (lfc > 0, "**up**")
+- With DEGs more highly expressed in VIR than LVP (lfc < 0, "**down**")
+
+<br>
+
+## Summary table
+
+```{r}
+go_res |>
+  count(contrast, DE_direction) |>
+  left_join(go_res |> distinct(contrast, DE_direction, n_DE),
+            by = c("contrast", "DE_direction")) |>
+  rename(time = contrast, nr_sig_terms = n, nr_DEG = n_DE)
+```
+
+<br>
+
+## Table with all significant terms
+
+Some of the columns in the table below are:
+
+- `padj` => Multiple-testing corrected p-value
+- `nr_DEG_in_cat` => Number of DEGs in the focal GO category
+- `nr_DEG` => Total number of DEGs for the focal contrast (timepoint)
+- `nr_in_cat` => Total number of (expressed) genes in the GO category
+
+```{r}
+go_res |>
+  select(time = contrast, DE_direction,
+         category, ontology, description,
+         padj, nr_DEG_in_cat = n_DE_in_cat,
+         nr_in_cat = numInCat, nr_DEG = n_DE) |>
+make_dt()
+```
+
+<br>
+
+## Heatmap-style plots
+
+### Up- and downregulated DEGs separately
+
+- BP (Biological Processes) and CC (Cellular Components):
+
+```{r}
+go_res |>
+  filter(DE_direction %in% c("up", "down"),
+         ontology %in% c("BP", "CC")) |> 
+  enrichplot(facet_var1 = "ontology",
+             x_var = "DE_direction", facet_var2 = "contrast",
+             ylab_size = 8)
+```
+
+- MF (Molecular Function):
+
+```{r}
+go_res |>
+  filter(DE_direction %in% c("up", "down"),
+         ontology %in% c("MF")) |> 
+  enrichplot(facet_var1 = "ontology",
+             x_var = "DE_direction", facet_var2 = "contrast",
+             ylab_size = 8)
+```
+
+### All DEGs (either DE direction)
+
+```{r}
+go_res |>
+  filter(DE_direction == "both") |>
+  enrichplot(facet_var1 = "ontology",
+             ylab_size = 8, countlab_size = 1.5)
+```
+
+## Cleveland's dotplots
+
+### Up- and downregulated DEGs separately
+
+- BP:
+
+```{r}
+go_res |>
+  filter(DE_direction %in% c("up", "down"),
+         ontology %in% c("BP")) |>
+  cdotplot(facet_var1 = "contrast", facet_var2 = "DE_direction",
+           fill_var = "padj_log", ylab_size = 7)
+```
+
+- CC:
+
+```{r}
+go_res |>
+  filter(DE_direction %in% c("up", "down"),
+         ontology %in% c("CC")) |>
+  cdotplot(facet_var1 = "contrast", facet_var2 = "DE_direction",
+           fill_var = "padj_log", ylab_size = 7)
+```
+
+
+- MF:
+
+```{r}
+go_res |>
+  filter(DE_direction %in% c("up", "down"),
+         ontology %in% c("MF")) |> 
+  cdotplot(facet_var1 = "ontology", facet_var2 = "DE_direction",
+           fill_var = "padj_log", ylab_size = 7)
+```
+
+### All DEGs (either DE direction)
+
+```{r}
+go_res |>
+  filter(DE_direction == "both") |>
+  cdotplot(facet_var1 = "ontology", facet_var2 = "contrast",
+           fill_var = "padj_log", ylab_size = 7, point_size = 4.5) +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = expansion(mult = c(0.005, 0.05)))
+```

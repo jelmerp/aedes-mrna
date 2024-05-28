@@ -1,13 +1,18 @@
-run_GO_wrap <- function(fcontrast, direction,
-                        DE_res, GO_map, gene_lens) {
-  DE_vec <- get_DE_vec(DE_res, fcontrast, direction)
+# GO wrapper function
+run_GO_wrap <- function(fcontrast, direction, DE_res, GO_map, gene_lens) {
+  DE_vec <- DE2vec(DE_res, fcontrast, direction)
   GO_df <- run_GO(fcontrast, direction, DE_vec, GO_map, gene_lens)
 }
 
-## Create named vector of DE genes
-get_DE_vec <- function(DE_res, fcontrast, direction = "both") {
-  
-  if (direction == "up") DE_res <- DE_res %>% filter(lfc > 0)
+# GO wrapper function when aggregating DE results by time
+run_GO_wrap_time <- function(ftime, direction, DE_res, GO_map, gene_lens) {
+  DE_vec <- DE2vec_time(DE_res, ftime, direction)
+  GO_df <- run_GO(fcontrast = ftime, direction, DE_vec, GO_map, gene_lens)
+}
+
+# Create named vector of DE genes
+DE2vec <- function(DE_res, fcontrast, direction = "both") {
+    if (direction == "up") DE_res <- DE_res %>% filter(lfc > 0)
   if (direction == "down") DE_res <- DE_res %>% filter(lfc < 0)
   
   DE_foc <- DE_res %>%
@@ -21,35 +26,58 @@ get_DE_vec <- function(DE_res, fcontrast, direction = "both") {
   return(contrast_vector)
 }
 
-## Function to run GO analysis
+# Create named vector for DE results aggregated by timepoint
+DE2vec_time <- function(DE_res, ftime, direction = "both") {
+  if (direction == "up") DE_res <- DE_res %>% filter(lfc > 0)
+  if (direction == "down") DE_res <- DE_res %>% filter(lfc < 0)
+  
+  DE_foc <- DE_res |> 
+    filter(time == ftime, !is.na(padj)) |>
+    arrange(gene_id, padj) |>
+    slice_head(n = 1, by = gene_id) |>
+    mutate(sig = ifelse(padj < 0.05, 1, 0))
+  
+  contrast_vector <- DE_foc$sig
+  names(contrast_vector) <- DE_foc$gene_id
+  
+  return(contrast_vector)
+}
+
+# Function to run GO analysis
 run_GO <- function(fcontrast, direction = "both",
                    DE_vec, GO_map, gene_lens) {
 
   if(sum(DE_vec > 0)) {
-    ## Remove rows from gene length df not in the DE_vec
+    # Remove rows from gene length df not in the DE_vec
     gene_lens_final <- gene_lens %>% filter(gene_id %in% names(DE_vec))
 
-    ## Remove elements from DE_vec not among the gene lengths
+    # Remove elements from DE_vec not among the gene lengths
     DE_vec_final <- DE_vec[names(DE_vec) %in% gene_lens_final$gene_id]
 
-    ## Probability weighting function based on gene lengths
-    pwf <- nullp(DEgenes = DE_vec_final,
-                 bias.data = gene_lens_final$gene_length,
-                 plot.fit = FALSE)
+    # Probability weighting function based on gene lengths
+    pwf <- suppressMessages(
+      nullp(DEgenes = DE_vec_final,
+            bias.data = gene_lens_final$gene_length,
+            plot.fit = FALSE)
+    )
 
-    ## Run GO test
-    GO_df <- goseq(pwf = pwf, gene2cat = GO_map, method = "Wallenius")
+    # Run GO test
+    GO_df <- suppressMessages(
+      goseq(pwf = pwf, gene2cat = GO_map,
+            method = "Wallenius", use_genes_without_cat = FALSE)
+    )
 
-    ## Process GO results
+    # Process GO results
+    DEGs <- names(DE_vec)[DE_vec == 1]
+    
     GO_df <- GO_df %>%
       filter(numDEInCat > 0) %>%    # P-adjustment only for genes that were actually tested
       mutate(padj = p.adjust(over_represented_pvalue, method = "BH"),
              contrast = fcontrast,
-             direction = direction) %>%
-      select(contrast, direction, padj, numDEInCat, numInCat, category, ontology,
-             description = term)
-
-    DEGs <- names(DE_vec)[DE_vec == 1]
+             direction = direction,
+             numDE = length(DEGs)) %>%
+      select(contrast, direction, padj, numDEInCat, numInCat, numDE,
+             category, ontology, description = term)
     
     GO_df <- GO_map %>%
       filter(gene_id %in% DEGs,
@@ -58,30 +86,30 @@ run_GO <- function(fcontrast, direction = "both",
       summarize(DE_in_cat = paste(gene_id, collapse = ",")) %>%
       full_join(GO_df, ., by = c("category" = "go_term"))
     
-    nsig <- filter(GO_df, padj < 0.05) %>% nrow()
-    cat("\n--------------\nRan comparison for:", fcontrast, "\n")
-    cat("## Number of significant DE genes:", sum(DE_vec), "\n")
-    cat("## Number of significant GO categories:", nsig, "\n")
+    nsig <- GO_df |> filter(padj < 0.05, numDEInCat > 1) |>  nrow()
+    cat("\n--------------\nRan comparison for:", fcontrast, direction, "\n")
+    cat("# Number of significant DE genes:", sum(DE_vec), "\n")
+    cat("# Number of significant GO categories:", nsig, "\n")
 
     return(GO_df)
     
   } else {
     
-    cat("## No significant DE genes\n")
+    cat("# No significant DE genes\n")
   
   }
 }
 
-## Prep df for GO plot
+# Prep df for GO plot
 prep_goplot <- function(df, contrasts, tissues, directions = "both") {
   
-  ## Subset to focal contrasts and tissues
+  # Subset to focal contrasts and tissues
   df <- df %>%
     filter(contrast %in% contrasts,
            tissue %in% tissues,
            direction %in% directions)
   
-  ## When using >1 tissue, use longer contrast ID
+  # When using >1 tissue, use longer contrast ID
   if (length(tissues) > 1) {
     df <- df %>% mutate(contrast = contrast_full)
     contrasts <- unique(df$contrast_full)
@@ -92,20 +120,20 @@ prep_goplot <- function(df, contrasts, tissues, directions = "both") {
   
   df %>%
     select(any_of(vars)) %>%
-    ## Pivot wider and then longer to include all terms in all contrasts
+    # Pivot wider and then longer to include all terms in all contrasts
     pivot_wider(names_from = contrast, values_from = padj) %>%
     pivot_longer(cols = any_of(contrasts),
                  names_to = "contrast", values_to = "padj") %>%
     left_join(df %>% select(contrast, tissue, category, direction, numDEInCat, sig),
               by = c("contrast", "tissue", "category", "direction")) %>%
-    ## No labels if not significant
+    # No labels if not significant
     mutate(numDEInCat = ifelse(padj >= 0.05, NA, numDEInCat)) %>%
     mutate(contrast = sub("padj_", "", contrast),
            padj = ifelse(sig == FALSE, NA, padj),
            padj_log = -log10(padj)) %>% 
-    ## Only take GO categories with at least one significant contrast
+    # Only take GO categories with at least one significant contrast
     filter(category %in% (filter(., sig == TRUE) %>% pull(category))) %>%
-    ## Only take contrast with at least one significant category
+    # Only take contrast with at least one significant category
     filter(contrast %in% (filter(., sig == TRUE) %>% pull(contrast))) %>%
     arrange(padj_log) %>% 
     mutate(description = str_trunc(description, width = 45),
@@ -113,12 +141,13 @@ prep_goplot <- function(df, contrasts, tissues, directions = "both") {
            description = fct_inorder(description))
 }
 
-## Heatmap-style plot for significant GO categories
+# Heatmap-style plot for significant GO categories
 goplot <- function(df, x_var = "contrast", facet_var = NULL,
                    type = "GO", label_count = TRUE,
-                   title = NULL, xlabs = NULL, ylabsize = 9) {
-  p <- df %>%
-    ggplot(aes_string(x_var, "description", fill = "padj_log")) +
+                   title = NULL, xlabs = NULL,
+                   ylabsize = 9, numDE_size = 1.5) {
+  p <- ggplot(df) +
+    aes(x = .data[[x_var]], y = description, fill = padj_log) +
     geom_tile(stat = "identity", size = 0.25, color = "grey80") +
     scale_fill_viridis_c(option = "D", na.value = "grey95") +
     labs(fill = "-log10\n(adj. p)", title = title) +
@@ -130,22 +159,30 @@ goplot <- function(df, x_var = "contrast", facet_var = NULL,
           axis.text.y = element_text(size = ylabsize))
 
   if(label_count == TRUE) {
-    p <- p + geom_label(aes(label = numDEInCat), fill = "grey95", size = 1.5)
+    p <- p + geom_label(aes(label = numDEInCat),
+                        fill = "grey95", size = numDE_size)
   }
   
   if (type == "GO") {
     if (is.null(facet_var)) {
-      ## ggforce::facet_col will keep tile heights constant
+      # ggforce::facet_col will keep tile heights constant
       p <- p +
         facet_col(vars(ontology), scales = "free_y", space = "free") +
         theme(strip.text = element_text(size = 10, face = "bold"))
     } else {
-      row_var <- "ontology"
-      
       p <- p +
-        facet_grid(rows = vars(ontology), cols = vars(!!sym(facet_var)),
-                   scales = "free_y", space = "free_y")
+        facet_grid(rows = vars(ontology),
+                   cols = vars(!!sym(facet_var)),
+                   scales = "free_y",
+                   space = "free_y",
+                   switch = "y")
     }
+  } else if (!is.null(facet_var)) {
+    p <- p +
+      #facet_col(vars(!!sym(facet_var)),
+      #          scales = "free_y", space = "free") +
+      facet_wrap(vars(!!sym(facet_var)), nrow = 1) +
+      theme(strip.text = element_text(size = 10, face = "bold"))
   }
   
   if (!is.null(xlabs)) p <- p + scale_x_discrete(labels = xlabs)
@@ -153,7 +190,7 @@ goplot <- function(df, x_var = "contrast", facet_var = NULL,
   return(p)
 }
 
-## GO dotplot
+# GO dotplot
 godotplot <- function(df, type = "GO") {
   
   #if (type == "GO") group_by <- "ontology" else group_by <- NULL 

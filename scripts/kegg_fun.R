@@ -1,10 +1,51 @@
-run_kegg <- function(fcontrast, DE_res, kegg_map) {
+run_kegg_time <- function(ftime,
+                          direction = "both",
+                          DE_res,
+                          kegg_map) {
+  
+  if (direction == "up") DE_res <- DE_res %>% filter(lfc > 0)
+  if (direction == "down") DE_res <- DE_res %>% filter(lfc < 0)
+  
+  DE_genes <- DE_res |> 
+    filter(time == ftime) |> 
+    arrange(gene_id, padj) |>
+    slice_head(n = 1, by = gene_id) |>
+    filter(padj < 0.05) |>
+    pull(gene_id)
+  
+  cat("## Time:", ftime,
+      " // Direction:", direction,
+      " // Nr DE genes: ", length(DE_genes))
+  
+  if (length(DE_genes) >  1) {
+    kegg_res <- enricher(DE_genes, TERM2GENE = kegg_map) %>%
+      as.data.frame(.)
+    cat(" // Nr enriched pathways:", nrow(kegg_res), "\n")
+    
+    if (nrow(kegg_res) > 0) {
+      kegg_res$contrast <- ftime
+      kegg_res$direction <- direction
+      row.names(kegg_res) <- NULL
+      return(kegg_res)
+    }
+  } else {
+    cat("\n")
+  }
+}
+
+run_kegg <- function(fcontrast, direction = "both", DE_res, kegg_map) {
+  
+  if (direction == "up") DE_res <- DE_res %>% filter(lfc > 0)
+  if (direction == "down") DE_res <- DE_res %>% filter(lfc < 0)
   
   DE_genes <- DE_res %>%
     filter(padj < 0.05, contrast == fcontrast) %>%
     pull(gene_id)
   
-  cat("## Contrast:", fcontrast, " // Nr DE genes: ", length(DE_genes))
+  cat("## Contrast:", fcontrast,
+      " // Direction:", direction,
+      " // Nr DE genes: ", length(DE_genes))
+  
   if (length(DE_genes) >  1) {
     kegg_res <- enricher(DE_genes, TERM2GENE = kegg_map) %>%
       as.data.frame(.)
@@ -12,6 +53,7 @@ run_kegg <- function(fcontrast, DE_res, kegg_map) {
   
     if (nrow(kegg_res) > 0) {
       kegg_res$contrast <- fcontrast
+      kegg_res$direction <- direction
       row.names(kegg_res) <- NULL
       return(kegg_res)
     }

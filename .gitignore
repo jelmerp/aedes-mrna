@@ -15,3 +15,5 @@ refdata/
 manuscript/
 *.DS_Store*
 *Rhistory*
+*/old/
+sra_submission/

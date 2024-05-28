@@ -1,0 +1,437 @@
+---
+title: "Aedes RNAseq paper figures"
+author: Jelmer Poelstra
+date: today
+format:
+  html:
+    cache: false
+    embed-resources: true
+    toc: true
+    df-print: paged
+    fig-dpi: 600
+knitr:
+  opts_chunk:
+    message: FALSE
+    warning: FALSE
+    echo: FALSE
+    out.width: "95%"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+# Install/load packages
+if(! "pacman" %in% installed.packages()) install.packages("pacman")
+packages <- c("tidyverse",        # Misc. data manipulation and plotting
+              "ggpubr",           # Stats for plots
+              "ggvenn",           # Venn diagrams
+              "patchwork",        # Combining plot panels
+              "here",             # Managing file paths
+              "readxl")           # Read Excel files             
+pacman::p_load(char = packages)
+
+# Load file with helper functions
+source(here("mcic-scripts/rnaseq/rfuns/enrich_funs.R"))
+
+# Define input files
+qpcr_file <- here("results/qpcr/lfc_correlation.xls")
+DE_file <- here("results/DE/DE_all.txt")
+other_studies_file <- here("results/other-studies/other-studies_combined.txt")
+annot_file <- here("results/DE/gene_info.txt")
+kegg_main_file <- here("results/kegg/kegg_all.txt")
+kegg_time_file <- here("results/kegg/kegg_agglomByTime.tsv")
+kegg_map_file <- here("results/kegg/kegg_map.txt")
+go_main_file <- here("results/GO/GO_all.txt")
+go_time_file <- here("results/GO/GO_agglomByTime.tsv")
+
+# Define output files
+outdir <- here("results/paper_figs")
+dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
+```
+
+```{r}
+# Set contrasts of interest and define tissues
+contrasts <- c("lvp06_vir06", "lvp24_vir24")
+tissues <- c("Ab", "HT", "LRT 3%", "LRT 12%")
+tissues_no12 <- c("Ab", "HT", "LRT 3%")
+times <- c("6 hpm", "24 hpm")
+
+# Colors
+tissue_cols <- c("steelblue", "goldenrod1", "indianred")
+#study_cols <- ggpubr::get_palette(palette = "aaas", 5)
+#study_cols <- ggpubr::get_palette(palette = "jco", 5)
+study_cols <- ggpubr::get_palette(palette = "d3", 5)
+study_cols2 <- c("#7FB8DF", "#F7Df7F", "#C2C2C2", "#E6A9A6")
+```
+
+```{r}
+# Read input files
+
+# qPCR correlation
+qpcr <- read_xls(qpcr_file) |>
+  mutate(geneID = sub(" .*", "", geneID))
+
+# GO - A) Separately for each tissue
+go_main <- read_tsv(go_main_file, show_col_types = FALSE) |>
+  mutate(description = str_trunc(description, width = 50),
+         contrast_full = contrast,
+         sig = ifelse(padj < 0.05 & numDEInCat > 1, TRUE, FALSE),
+         tissue = sub(".*\\d\\d_(\\w+)$", "\\1", contrast),
+         contrast = sub("(.*_.*)_\\w+$", "\\1", contrast),
+         time = sub(".*(06|24)", "t\\1", contrast),
+         time = ifelse(time == "t06", "6 hpm", "24 hpm"),
+         fold_enrich = NA, mean_lfc = NA, median_lfc = NA) |>
+  mutate(
+    tissue = case_when(
+      tissue == "ab" ~ "Ab",
+      tissue == "ht" ~ "HT",
+      tissue == "lrt" ~ "LRT 3%",
+      tissue == "lrt12" ~ "LRT 12%"
+    ),
+    tissue = factor(tissue, levels = tissues),
+    time = factor(time, levels = times)
+  ) |> 
+  rename(DE_direction = direction,
+         n_DE_in_cat = numDEInCat) |>
+  filter(category != "GO:0055114",          # Remove obsolete GO category
+         contrast %in% contrasts)           # Only select focal contrasts!
+
+# GO - B) Aggregated by time point
+go_time <- read_tsv(go_time_file, show_col_types = FALSE) |>
+  mutate(sig = ifelse(padj < 0.05 & numDEInCat > 1, TRUE, FALSE),
+         fold_enrich = NA, mean_lfc = NA, median_lfc = NA) |>
+  rename(n_DE_in_cat = numDEInCat,
+         n_DE = numDE) |>
+  mutate(contrast = ifelse(contrast == "t06", "6 hpm", "24 hpm"),
+         contrast = factor(contrast, levels = times))
+
+# KEGG - A) Separately for each tissue
+kegg_main <- read_tsv(kegg_main_file, show_col_types = FALSE) |>
+  rename(n_DE_in_cat = count) |> 
+  mutate(description = sub(" -.*", "", description),
+         description = str_trunc(description, width = 50),
+         #description = str_wrap(description, width = 20),
+         contrast = sub("lrt10", "lrt12", contrast),
+         contrast_full = contrast,
+         sig = ifelse(padj < 0.05, TRUE, FALSE),
+         tissue = sub(".*\\d\\d_(\\w+)$", "\\1", contrast),
+         contrast = sub("(.*_.*)_\\w+$", "\\1", contrast),
+         time = sub(".*(06|24)", "t\\1", contrast),
+         time = ifelse(time == "t06", "6 hpm", "24 hpm"),
+         fold_enrich = NA, mean_lfc = NA, median_lfc = NA) |>
+  mutate(
+    tissue = case_when(
+      tissue == "ab" ~ "Ab",
+      tissue == "ht" ~ "HT",
+      tissue == "lrt" ~ "LRT 3%",
+      tissue == "lrt12" ~ "LRT 12%"
+    ),
+    tissue = factor(tissue, levels = tissues),
+    time = factor(time, levels = times)
+  ) |> 
+  rename(DE_direction = direction) |>
+  filter(contrast %in% contrasts)           # Only select focal contrasts!
+
+# KEGG - B) Aggregated by time
+kegg_time <- read_tsv(kegg_time_file, show_col_types = FALSE) |>
+  mutate(sig = ifelse(padj < 0.05 & n_DE_in_cat > 1, TRUE, FALSE),
+         fold_enrich = NA, mean_lfc = NA, median_lfc = NA,
+         description = sub(" -.*", "", description),
+         contrast = ifelse(contrast == "t06", "6 hpm", "24 hpm"),
+         contrast = factor(contrast, levels = times))
+
+# Gene annotation file
+gene_df <- read_tsv(annot_file, show_col_types = FALSE) |>
+  select(gene_id, description) |>
+  mutate(description = str_trunc(description, width = 50))
+
+# DE results
+DE_res <- read_tsv(DE_file, show_col_types = FALSE) |>
+  mutate(tissue = gsub(".*\\d(\\w+)", "\\1", treat_a),
+         tissue = ifelse(sugar == "sug12", "lrt12", tissue),
+         trt_a = gsub("(.*\\d+)\\w+", "\\1", treat_a),
+         trt_b = gsub("(.*\\d+)\\w+", "\\1", treat_b),
+         contrast = paste0(trt_a, "_", trt_b),
+         contrast_full = paste0(contrast, "_", tissue),
+         sig = ifelse(padj < 0.05, TRUE, FALSE),
+         hpm = as.integer(sub(".*(\\d\\d$)", "\\1", trt_a)),
+         time = ifelse(hpm == 6, "6 hpm", "24 hpm")) |>
+  mutate(
+    tissue = case_when(
+      tissue == "ab" ~ "Ab",
+      tissue == "ht" ~ "HT",
+      tissue == "lrt" ~ "LRT 3%",
+      tissue == "lrt12" ~ "LRT 12%"
+    ),
+    tissue = factor(tissue, levels = tissues),
+    time = factor(time, levels = times),
+  ) |> 
+  filter(contrast %in% contrasts) |>            # Only select focal contrasts!
+  select(gene_id, lfc, pvalue, padj, sig,
+         trt_a, trt_b, hpm, tissue, sugar, contrast, contrast_full) |>
+  left_join(gene_df, by = "gene_id")
+
+DE_res_no12 <- DE_res |> filter(tissue != "LRT 12%")
+
+# DE results from other studies
+others <- read_tsv(other_studies_file, show_col_types = FALSE)
+```
+
+```{r}
+# Create a dataframe for Laura with DEGs from all studies combined, in wide format
+DE_join <- DE_res |>
+  filter(tissue %in% c("LRT 3%", "LRT 12%"),
+         padj < 0.05) |> 
+  mutate(study = ifelse(tissue == "LRT 3%", "own3pct", "own12pct")) |> 
+  select(gene_id, lfc, padj, study, hpm) |>
+  bind_rows(others) |>
+  filter(!study %in% c("alonso", "pascini")) |>
+  group_by(gene_id, hpm) |> 
+  add_count(name = "n_significant") |> 
+  pivot_wider(id_cols = c(gene_id, hpm, n_significant),
+              names_from = study,
+              values_from = c(lfc, padj)) |>
+  arrange(gene_id)
+
+DE_join_file <- file.path(outdir, "DEGs_allstudies.tsv")
+write_tsv(DE_join, DE_join_file)
+```
+
+
+<br>
+
+## qPCR correlation plot
+
+```{r}
+# Create the plot
+ggplot(qpcr) +
+  aes(x = lfc_RNA, y = lfc_qPCR) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linewidth = 0.8) +
+  geom_point(shape = 21, fill = "red", size = 3, stroke = 1) +
+  geom_hline(yintercept = 0, color = "grey40") +
+  geom_vline(xintercept = 0, color = "grey40") +
+  labs(x = "Log-fold change (RNAseq)",
+       y = "Log-fold change (qPCR)") +
+  theme_minimal(base_size = 14) +
+  theme(panel.grid = element_blank(),
+        axis.ticks = element_line())
+```
+
+<br>
+
+## GO plots
+
+I'm keeping the BP - CC - MF order for now.
+Between having an alphabetical order & the most interesting ontology (BP) being on top
+on the one hand, versus ordering by the number of significant terms on the other hand,
+I think I prefer the former.
+But if you still prefer to order MF - BP - CC, I can do that. 
+
+### Each tissue separately
+
+#### 6 hpm
+
+```{r, fig.height=7}
+go_main |>
+  filter(DE_direction == "both", time == "6 hpm") |>
+  cdotplot(facet_var1 = "ontology", facet_var2 = "tissue",
+           fill_var = "padj_log", ylab_size = 7, point_size = 4.5,
+           add_cat_id = TRUE) +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = expansion(mult = c(0.005, 0.075)))
+```
+
+#### 24 hpm
+
+```{r}
+go_main |>
+  filter(DE_direction == "both", time == "24 hpm") |>
+  cdotplot(facet_var1 = "ontology", facet_var2 = "tissue",
+           fill_var = "padj_log", ylab_size = 9, add_cat_id = TRUE) +
+  scale_y_continuous(limits = c(0, NA),
+                     breaks = c(0, 3, 6, 9),
+                     expand = expansion(mult = c(0.005, 0.075)))
+```
+
+### 3% tissues combined
+
+```{r, fig.height=7}
+go_time |>
+  filter(DE_direction == "both") |>
+  cdotplot(facet_var1 = "ontology", facet_var2 = "contrast",
+           fill_var = "padj_log", ylab_size = 7, point_size = 4.5,
+           add_cat_id = TRUE) +
+  scale_y_continuous(limits = c(0, NA),
+                     breaks = c(0, 3, 6, 9),
+                     expand = expansion(mult = c(0.005, 0.075)))
+```
+
+<br>
+
+## KEGG plots
+
+### Each tissue separately
+
+#### 6 hpm
+
+```{r}
+kegg_main |>
+  filter(DE_direction == "both", time == "6 hpm") |>
+  cdotplot(facet_var1 = "tissue", fill_var = "padj_log",
+           facet_scales = "fixed", ylab_size = 9, add_cat_id = TRUE) +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = expansion(mult = c(0.005, 0.15)))
+```
+
+#### 24 hpm
+
+I'm including this figure for consistency, but this single significant pathway
+for 24 hpm should just be mentioned in the text instead.
+
+```{r}
+kegg_main |>
+  filter(DE_direction == "both", time == "24 hpm") |>
+  cdotplot(facet_var1 = "tissue", fill_var = "padj_log",
+           facet_scales = "fixed", add_cat_id = TRUE) +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = expansion(mult = c(0.005, 0.075)))
+```
+
+### 3% tissues combined
+
+```{r}
+kegg_time |>
+  filter(DE_direction == "both") |>
+  cdotplot(facet_var1 = "contrast", fill_var = "padj_log",
+           facet_scales = "fixed", ylab_size = 9, add_cat_id = TRUE) +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = expansion(mult = c(0.005, 0.075)))
+```
+
+<br>
+
+## Venn Diagrams comparing tissues
+
+In all Venn Diagrams, panel A is 6 hpm and panel B is 24 hpm.
+
+```{r}
+# Function to get a vector with significantly DE genes for a pairwise contrast
+get_genes <- function(fcontrast, ftissue, direction = "both",
+                      DE_df) {
+  DE_df <- DE_df |> 
+    filter(sig == TRUE, tissue == ftissue, contrast == fcontrast)
+  if (direction == "up") DE_df <- DE_df |> filter(lfc > 0)
+  if (direction == "down") DE_df <- DE_df |> filter(lfc < 0)
+  
+  DE_df |> pull(gene_id)
+}
+```
+
+```{r}
+# List for 6 hpm
+DE_list6 <- map(.x = tissues_no12, .f = get_genes,
+                fcontrast = "lvp06_vir06", DE_df = DE_res_no12)
+names(DE_list6) <- tissues_no12
+
+# List for 24 hpm
+DE_list24 <- map(.x = tissues_no12, .f = get_genes,
+                 fcontrast = "lvp24_vir24", DE_df = DE_res_no12)
+names(DE_list24) <- tissues_no12
+
+# Make the plots
+p1 <- ggvenn(DE_list6,
+             show_percentage = FALSE,
+             fill_color = tissue_cols, fill_alpha = 0.7,
+             stroke_color = "grey40", set_name_size = 5)
+p2 <- ggvenn(DE_list24,
+             show_percentage = FALSE,
+             fill_color = tissue_cols, fill_alpha = 0.7,
+             stroke_color = "grey40", set_name_size = 5)
+
+p1 + p2 + plot_annotation(tag_levels = "A") &
+  theme(plot.tag = element_text(face = "bold", size = 15))
+```
+
+<br>
+
+## Venn Diagrams comparing studies
+
+In all Venn Diagrams, panel A is 6 hpm and panel B is 24 hpm.
+
+I went for separate figures with 3% and 12%,
+since otherwise a Venn diagram with 5 groups is needed and that gets very crowded.
+If we do need a figure with all 5 groups, we could consider an "upset plot".
+
+```{r}
+# Subsets for Venn diagrams
+DE6 <- DE_res |> filter(hpm == 6, tissue %in% c("LRT 3%", "LRT12%"), padj < 0.05)
+DE24 <- DE_res |> filter(hpm == 24, tissue %in% c("LRT 3%", "LRT 12%"), padj < 0.05)
+DE6_LRT3 <- DE_res |> filter(hpm == 6, tissue == "LRT 3%", padj < 0.05)
+DE24_LRT3 <- DE_res |> filter(hpm == 24, tissue == "LRT 3%", padj < 0.05)
+DE6_LRT12 <- DE_res |> filter(hpm == 6, tissue == "LRT 12%", padj < 0.05)
+DE24_LRT12 <- DE_res |> filter(hpm == 24, tissue == "LRT 12%", padj < 0.05)
+
+alfpar_6h <- others |> filter(study == "alfpar", hpm == 6)
+alfpar_24h <- others |> filter(study == "alfpar", hpm == 24)
+camargo_6h <- others |> filter(study == "camargo", hpm == 6)
+camargo_24h <- others |> filter(study == "camargo", hpm == 24)
+amaro <- others |> filter(study == "amaro", padj < 0.05)
+```
+
+### 3%
+
+```{r, fig.width=9, fig.height=4}
+# Create lists for Venn diagrams
+list6 <- list(DE6_LRT3$gene_id, alfpar_6h$gene_id, camargo_6h$gene_id)
+names(list6) <- c("LRT 3%", "Alfonso-Parra et al.", "Camargo et al.")
+
+list24 <- list(amaro$gene_id, DE24_LRT3$gene_id, alfpar_24h$gene_id, camargo_24h$gene_id)
+
+names(list24) <- c("MAG-injected vs.\nnon-injected\n(Amaro et al.)",
+                   "LRT 3%",
+                   "Mated vs. virgin (LRT)\n(Alfonso-Parra et al.)",
+                   "Mated vs. virgin\n(Spermathecae)\n(Camargo et al.)")
+
+# Make the plots
+p1 <- ggvenn(list6, show_percentage = TRUE,
+             fill_color = study_cols[1:3], fill_alpha = 0.4,
+             stroke_color = "grey40", set_name_size = 4, text_size = 3) +
+  coord_cartesian(clip = "off")
+p2 <- ggvenn(list24, show_percentage = TRUE,
+             fill_color = study_cols2, fill_alpha = 0.8,
+             stroke_color = "grey40", set_name_size = 3.5, text_size = 3) +
+  theme(plot.margin = margin(0.1, 1.2, 0.1, 0.1, "cm")) +
+  coord_cartesian(clip = "off")
+
+p1 + p2 + plot_annotation(tag_levels = "A") &
+  theme(plot.tag = element_text(face = "bold", size = 15))
+```
+
+### 12%
+
+```{r, fig.width=9, fig.height=4}
+# Create lists for Venn diagrams
+list6 <- list(DE6_LRT12$gene_id, alfpar_6h$gene_id, camargo_6h$gene_id)
+names(list6) <- c("LRT 12%", "Alfonso-Parra et al.", "Camargo et al.")
+
+list24 <- list(amaro$gene_id, DE24_LRT12$gene_id, 
+               alfpar_24h$gene_id, camargo_24h$gene_id)
+names(list24) <- c("MAG-injected vs.\nnon-injected\n(Amaro et al.)",
+                   "LRT 12%",
+                   "Mated vs. virgin (LRT)\n(Alfonso-Parra et al.)",
+                   "Mated vs. virgin\n(Spermathecae)\n(Camargo et al.)")
+
+# Make the plots
+p1 <- ggvenn(list6, show_percentage = TRUE,
+             fill_color = study_cols[1:3], fill_alpha = 0.4,
+             stroke_color = "grey40", set_name_size = 4, text_size = 3) +
+  coord_cartesian(clip = "off")
+p2 <- ggvenn(list24, show_percentage = TRUE,
+             fill_color = study_cols2, fill_alpha = 0.8,
+             stroke_color = "grey40", set_name_size = 3.5, text_size = 3) +
+  theme(plot.margin = margin(0.1, 1.5, 0.1, 0.1, "cm")) +
+  coord_cartesian(clip = "off")
+
+p1 + p2 + plot_annotation(tag_levels = "A") &
+  theme(plot.tag = element_text(face = "bold", size = 15))
+```

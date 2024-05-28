@@ -56,13 +56,10 @@ contrasts <- c("lvp06_vir06", "lvp24_vir24")
 contrasts_all <- c("akh06_vir06", "akh24_vir24",
                    "lvp06_vir06", "lvp24_vir24",
                    "lvp06_akh06", "lvp24_akh24")
-# contrast_labs <- c("mated v. unmated (6 hpm)",
-#                     "mated v. unmated (24 hpm)")
 contrast_labs <- c("6 hpm", "24 hpm")
 
 ## Define tissues
 tissues <- c("ab", "ht", "lrt")
-#tissue_labs <- c("abdomen", "head & thorax", "LRT")
 tissue_labs <- c("Ab", "HT", "LRT")
 ```
 
@@ -102,7 +99,7 @@ DE_res_all <- read_tsv(DE_file, show_col_types = FALSE) %>%
   left_join(gene_df, by = "gene_id")
 DE_res <- DE_res_all %>% filter(tissue %in% tissues)
 
-count_df_all <- read_tsv(counts_file)
+count_df_all <- read_tsv(counts_file, show_col_types = FALSE)
 count_df <- count_df_all %>% filter(sugar != "sug12", !grepl("akh", treatment))
 ```
 
@@ -167,6 +164,27 @@ sig_by_comp <- DE_res %>%
 ```
 
 ```{r}
+sig_by_comp <- DE_res %>%
+  mutate(contrast_full = factor(contrast_full),
+         sig = factor(sig),
+         direction = ifelse(lfc < 0, "down", "up")) %>% 
+  group_by(contrast_full, sig, direction, .drop = FALSE) %>%
+  count(name = "nsig") %>%
+  filter(sig == TRUE) %>% 
+  ungroup() %>%
+  select(contrast_full, direction, nsig) %>%
+  full_join(contrast_df, by = "contrast_full") %>% 
+  select(trt_a, trt_b, tissue, time_contrast, direction, nsig) %>%
+  pivot_wider(id_cols = c(trt_a, trt_b, time_contrast, direction),
+              names_from = tissue,
+              values_from = nsig,
+              values_fill = 0) %>%
+  arrange(time_contrast, trt_a, trt_b) %>%
+  select(-time_contrast) %>%
+  filter(!is.na(direction))
+```
+
+```{r}
 ## Barplot
 DE_res %>%
   filter(sig == TRUE, contrast %in% contrasts[1:4]) %>%
@@ -185,6 +203,9 @@ DE_res %>%
 ```
 
 <br>
+
+In the table below, "down" means lower expression in LVP than in VIR,
+and "up" means higher expression in LVP than in VIR:
 
 ```{r}
 ## Table
