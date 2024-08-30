@@ -15,6 +15,7 @@ knitr:
     warning: FALSE
     echo: FALSE
     out.width: "95%"
+    fig.align: "center"
 editor_options: 
   chunk_output_type: console
 ---
@@ -177,152 +178,19 @@ DE_res_no12 <- DE_res |> filter(tissue != "LRT 12%")
 others <- read_tsv(other_studies_file, show_col_types = FALSE)
 ```
 
-```{r}
-# Create a dataframe for Laura with DEGs from all studies combined, in wide format
-DE_join <- DE_res |>
-  filter(tissue %in% c("LRT 3%", "LRT 12%"),
-         padj < 0.05) |> 
-  mutate(study = ifelse(tissue == "LRT 3%", "own3pct", "own12pct")) |> 
-  select(gene_id, lfc, padj, study, hpm) |>
-  bind_rows(others) |>
-  filter(!study %in% c("alonso", "pascini")) |>
-  group_by(gene_id, hpm) |> 
-  add_count(name = "n_significant") |> 
-  pivot_wider(id_cols = c(gene_id, hpm, n_significant),
-              names_from = study,
-              values_from = c(lfc, padj)) |>
-  arrange(gene_id)
-
-DE_join_file <- file.path(outdir, "DEGs_allstudies.tsv")
-write_tsv(DE_join, DE_join_file)
-```
-
-
 <br>
 
-## qPCR correlation plot
-
-```{r}
-# Create the plot
-ggplot(qpcr) +
-  aes(x = lfc_RNA, y = lfc_qPCR) +
-  geom_smooth(method = "lm", se = FALSE, color = "black", linewidth = 0.8) +
-  geom_point(shape = 21, fill = "red", size = 3, stroke = 1) +
-  geom_hline(yintercept = 0, color = "grey40") +
-  geom_vline(xintercept = 0, color = "grey40") +
-  labs(x = "Log-fold change (RNAseq)",
-       y = "Log-fold change (qPCR)") +
-  theme_minimal(base_size = 14) +
-  theme(panel.grid = element_blank(),
-        axis.ticks = element_line())
-```
-
-<br>
-
-## GO plots
-
-I'm keeping the BP - CC - MF order for now.
-Between having an alphabetical order & the most interesting ontology (BP) being on top
-on the one hand, versus ordering by the number of significant terms on the other hand,
-I think I prefer the former.
-But if you still prefer to order MF - BP - CC, I can do that. 
-
-### Each tissue separately
-
-#### 6 hpm
-
-```{r, fig.height=7}
-go_main |>
-  filter(DE_direction == "both", time == "6 hpm") |>
-  cdotplot(facet_var1 = "ontology", facet_var2 = "tissue",
-           fill_var = "padj_log", ylab_size = 7, point_size = 4.5,
-           add_cat_id = TRUE) +
-  scale_y_continuous(limits = c(0, NA),
-                     expand = expansion(mult = c(0.005, 0.075)))
-```
-
-#### 24 hpm
-
-```{r}
-go_main |>
-  filter(DE_direction == "both", time == "24 hpm") |>
-  cdotplot(facet_var1 = "ontology", facet_var2 = "tissue",
-           fill_var = "padj_log", ylab_size = 9, add_cat_id = TRUE) +
-  scale_y_continuous(limits = c(0, NA),
-                     breaks = c(0, 3, 6, 9),
-                     expand = expansion(mult = c(0.005, 0.075)))
-```
-
-### 3% tissues combined
-
-```{r, fig.height=7}
-go_time |>
-  filter(DE_direction == "both") |>
-  cdotplot(facet_var1 = "ontology", facet_var2 = "contrast",
-           fill_var = "padj_log", ylab_size = 7, point_size = 4.5,
-           add_cat_id = TRUE) +
-  scale_y_continuous(limits = c(0, NA),
-                     breaks = c(0, 3, 6, 9),
-                     expand = expansion(mult = c(0.005, 0.075)))
-```
-
-<br>
-
-## KEGG plots
-
-### Each tissue separately
-
-#### 6 hpm
-
-```{r}
-kegg_main |>
-  filter(DE_direction == "both", time == "6 hpm") |>
-  cdotplot(facet_var1 = "tissue", fill_var = "padj_log",
-           facet_scales = "fixed", ylab_size = 9, add_cat_id = TRUE) +
-  scale_y_continuous(limits = c(0, NA),
-                     expand = expansion(mult = c(0.005, 0.15)))
-```
-
-#### 24 hpm
-
-I'm including this figure for consistency, but this single significant pathway
-for 24 hpm should just be mentioned in the text instead.
-
-```{r}
-kegg_main |>
-  filter(DE_direction == "both", time == "24 hpm") |>
-  cdotplot(facet_var1 = "tissue", fill_var = "padj_log",
-           facet_scales = "fixed", add_cat_id = TRUE) +
-  scale_y_continuous(limits = c(0, NA),
-                     expand = expansion(mult = c(0.005, 0.075)))
-```
-
-### 3% tissues combined
-
-```{r}
-kegg_time |>
-  filter(DE_direction == "both") |>
-  cdotplot(facet_var1 = "contrast", fill_var = "padj_log",
-           facet_scales = "fixed", ylab_size = 9, add_cat_id = TRUE) +
-  scale_y_continuous(limits = c(0, NA),
-                     expand = expansion(mult = c(0.005, 0.075)))
-```
-
-<br>
-
-## Venn Diagrams comparing tissues
+## Fig. 1: Venn Diagrams comparing tissues
 
 In all Venn Diagrams, panel A is 6 hpm and panel B is 24 hpm.
 
 ```{r}
 # Function to get a vector with significantly DE genes for a pairwise contrast
-get_genes <- function(fcontrast, ftissue, direction = "both",
-                      DE_df) {
+get_genes <- function(fcontrast, ftissue, direction = "both", DE_df) {
   DE_df <- DE_df |> 
     filter(sig == TRUE, tissue == ftissue, contrast == fcontrast)
   if (direction == "up") DE_df <- DE_df |> filter(lfc > 0)
   if (direction == "down") DE_df <- DE_df |> filter(lfc < 0)
-  
   DE_df |> pull(gene_id)
 }
 ```
@@ -342,25 +210,115 @@ names(DE_list24) <- tissues_no12
 p1 <- ggvenn(DE_list6,
              show_percentage = FALSE,
              fill_color = tissue_cols, fill_alpha = 0.7,
-             stroke_color = "grey40", set_name_size = 5)
+             stroke_color = "grey40",
+             set_name_size = 4, text_size = 4) +
+  labs(title = "6 hours post-mating") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold",
+                                  margin = margin(b = 10)))
 p2 <- ggvenn(DE_list24,
              show_percentage = FALSE,
              fill_color = tissue_cols, fill_alpha = 0.7,
-             stroke_color = "grey40", set_name_size = 5)
+             stroke_color = "grey40",
+             set_name_size = 4, text_size = 4) +
+  labs(title = "24 hours post-mating") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold",
+                                  margin = margin(b = 10)))
 
-p1 + p2 + plot_annotation(tag_levels = "A") &
+p1 + p2 &
   theme(plot.tag = element_text(face = "bold", size = 15))
 ```
 
 <br>
 
-## Venn Diagrams comparing studies
+## Fig. 2: KEGG plots
 
-In all Venn Diagrams, panel A is 6 hpm and panel B is 24 hpm.
+```{r, fig.asp=1.4}
+# 6 hpm
+p_kegg1 <- kegg_main |>
+  filter(DE_direction == "both", time == "6 hpm") |>
+  cdotplot(facet_var1 = "tissue", fill_var = "padj_log",
+           facet_scales = "fixed", ylab_size = 9, add_cat_id = TRUE) +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = expansion(mult = c(0.005, 0.15)))
 
-I went for separate figures with 3% and 12%,
-since otherwise a Venn diagram with 5 groups is needed and that gets very crowded.
-If we do need a figure with all 5 groups, we could consider an "upset plot".
+# 3% tissues combined
+p_kegg2 <- kegg_time |>
+  filter(DE_direction == "both") |>
+  cdotplot(facet_var1 = "contrast", fill_var = "padj_log",
+           facet_scales = "fixed", ylab_size = 9, add_cat_id = TRUE) +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = expansion(mult = c(0.005, 0.075)))
+
+p_kegg1 / p_kegg2 +
+  plot_annotation(tag_levels = "A") &
+  theme(plot.tag = element_text(face = "bold", size = 15))
+```
+
+<br>
+
+## Fig. 3: LFC correlation between 3% and 12%
+
+```{r}
+# Create table with all genes significant in 12% or 3%
+sugarcomp <- function(fcontrast, DE_df) {
+  DE_df <- DE_df |>
+    select(-contrast_full, -trt_a, -trt_b, -sugar, -pvalue)
+  
+  sug03 <- DE_df |>
+    filter(sig == TRUE, contrast == fcontrast, tissue == "LRT 3%") |>
+    select(-contrast, -description, -sig, -tissue)
+  sug12 <- DE_df |>
+    filter(sig == TRUE, contrast == fcontrast, tissue == "LRT 12%") |>
+    select(-sig, -tissue)
+  
+  genes_df <- inner_join(sug03, sug12, by = "gene_id",
+                         suffix = c("_03%", "_12%")) |>
+    select(contrast, gene_id, `lfc_03%`, `lfc_12%`,
+           `padj_03%`, `padj_12%`, description) |>
+    mutate(lfc_mean = mean(c(`lfc_03%`, `lfc_12%`), na.rm = TRUE)) |>
+    arrange(lfc_mean) |>
+    select(-lfc_mean)
+  
+  return(genes_df)
+}
+
+sugar_df <- map_dfr(.x = contrasts, .f = sugarcomp, DE_res)
+```
+
+```{r}
+contrast_labs <- c("6 hpm", "24 hpm")
+
+p_fig3 <- sugar_df |>
+  ggplot(aes(x = `lfc_03%`, y = `lfc_12%`, fill = contrast)) +
+  geom_point(shape = 21, size = 3.5) +
+  geom_hline(yintercept = 0, color = "grey20", linewidth = 0.25) +
+  geom_vline(xintercept = 0, color = "grey20", linewidth = 0.25) +
+  scale_fill_brewer(palette = "Dark2", labels = contrast_labs) +
+  scale_x_continuous(limits = c(-5, 9), expand = c(0, 0),
+                     breaks = c(-3, 0, 3, 6, 9)) +
+  scale_y_continuous(limits = c(-5, 9), expand = c(0, 0),
+                     breaks = c(-3, 0, 3, 6, 9)) +
+  labs(x = "Log-fold change in LRT 3%",
+       y = "Log-fold change in LRT 12%",
+       color = "Time point") +
+  theme_bw(base_size = 14) +
+  theme(panel.grid.minor = element_blank())
+
+p_fig3
+```
+
+```{r}
+p_fig3 +
+  ggpubr::stat_cor(
+    aes(label = paste(c(6, 24), "hpm:", ..r.label.., "-", ..p.label.., sep = "~")),
+    method = "spearman", size = 3.9, color = "grey40",
+    label.x.npc = 0.53, label.y.npc = 0.98,
+    cor.coef.name = "rho")
+```
+
+<br>
+
+## Fig. 4: Venn Diagrams comparing studies
 
 ```{r}
 # Subsets for Venn diagrams
@@ -370,68 +328,96 @@ DE6_LRT3 <- DE_res |> filter(hpm == 6, tissue == "LRT 3%", padj < 0.05)
 DE24_LRT3 <- DE_res |> filter(hpm == 24, tissue == "LRT 3%", padj < 0.05)
 DE6_LRT12 <- DE_res |> filter(hpm == 6, tissue == "LRT 12%", padj < 0.05)
 DE24_LRT12 <- DE_res |> filter(hpm == 24, tissue == "LRT 12%", padj < 0.05)
-
 alfpar_6h <- others |> filter(study == "alfpar", hpm == 6)
 alfpar_24h <- others |> filter(study == "alfpar", hpm == 24)
-camargo_6h <- others |> filter(study == "camargo", hpm == 6)
-camargo_24h <- others |> filter(study == "camargo", hpm == 24)
-amaro <- others |> filter(study == "amaro", padj < 0.05)
 ```
 
-### 3%
-
-```{r, fig.width=9, fig.height=4}
+```{r, fig.asp=0.6}
 # Create lists for Venn diagrams
-list6 <- list(DE6_LRT3$gene_id, alfpar_6h$gene_id, camargo_6h$gene_id)
-names(list6) <- c("LRT 3%", "Alfonso-Parra et al.", "Camargo et al.")
+list6 <- list(DE6_LRT3$gene_id, DE6_LRT12$gene_id, alfpar_6h$gene_id)
+names(list6) <- c("LRT 3%", "LRT 12%", "LRT 10% (Alfonso-Parra et al.)")
 
-list24 <- list(amaro$gene_id, DE24_LRT3$gene_id, alfpar_24h$gene_id, camargo_24h$gene_id)
-
-names(list24) <- c("MAG-injected vs.\nnon-injected\n(Amaro et al.)",
-                   "LRT 3%",
-                   "Mated vs. virgin (LRT)\n(Alfonso-Parra et al.)",
-                   "Mated vs. virgin\n(Spermathecae)\n(Camargo et al.)")
+list24 <- list(DE24_LRT3$gene_id, DE24_LRT12$gene_id, alfpar_24h$gene_id)
+names(list24) <- c("LRT 3%", "LRT 12%", "LRT 10% (Alfonso-Parra et al.)")
 
 # Make the plots
 p1 <- ggvenn(list6, show_percentage = TRUE,
-             fill_color = study_cols[1:3], fill_alpha = 0.4,
+             fill_color = study_cols[1:3], fill_alpha = 0.8,
              stroke_color = "grey40", set_name_size = 4, text_size = 3) +
-  coord_cartesian(clip = "off")
+  coord_cartesian(clip = "off") +
+  labs(title = "6 hours post-mating") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold",
+                                  margin = margin(b = 10)))
 p2 <- ggvenn(list24, show_percentage = TRUE,
-             fill_color = study_cols2, fill_alpha = 0.8,
-             stroke_color = "grey40", set_name_size = 3.5, text_size = 3) +
+             fill_color = study_cols[1:3], fill_alpha = 0.8,
+             stroke_color = "grey40", set_name_size = 4, text_size = 3) +
   theme(plot.margin = margin(0.1, 1.2, 0.1, 0.1, "cm")) +
-  coord_cartesian(clip = "off")
+  coord_cartesian(clip = "off") +
+  labs(title = "24 hours post-mating") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold",
+                                  margin = margin(b = 10)))
 
-p1 + p2 + plot_annotation(tag_levels = "A") &
+p1 + p2 +
   theme(plot.tag = element_text(face = "bold", size = 15))
 ```
 
-### 12%
+<br>
 
-```{r, fig.width=9, fig.height=4}
-# Create lists for Venn diagrams
-list6 <- list(DE6_LRT12$gene_id, alfpar_6h$gene_id, camargo_6h$gene_id)
-names(list6) <- c("LRT 12%", "Alfonso-Parra et al.", "Camargo et al.")
+## Suppl. Fig. 1: qPCR correlation plot
 
-list24 <- list(amaro$gene_id, DE24_LRT12$gene_id, 
-               alfpar_24h$gene_id, camargo_24h$gene_id)
-names(list24) <- c("MAG-injected vs.\nnon-injected\n(Amaro et al.)",
-                   "LRT 12%",
-                   "Mated vs. virgin (LRT)\n(Alfonso-Parra et al.)",
-                   "Mated vs. virgin\n(Spermathecae)\n(Camargo et al.)")
-
-# Make the plots
-p1 <- ggvenn(list6, show_percentage = TRUE,
-             fill_color = study_cols[1:3], fill_alpha = 0.4,
-             stroke_color = "grey40", set_name_size = 4, text_size = 3) +
-  coord_cartesian(clip = "off")
-p2 <- ggvenn(list24, show_percentage = TRUE,
-             fill_color = study_cols2, fill_alpha = 0.8,
-             stroke_color = "grey40", set_name_size = 3.5, text_size = 3) +
-  theme(plot.margin = margin(0.1, 1.5, 0.1, 0.1, "cm")) +
-  coord_cartesian(clip = "off")
-
-p1 + p2 + plot_annotation(tag_levels = "A") &
-  theme(plot.tag = element_text(face = "bold", size = 15))
+```{r}
+# Create the plot
+ggplot(qpcr) +
+  aes(x = lfc_RNA, y = lfc_qPCR) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linewidth = 0.8) +
+  geom_point(shape = 21, fill = "red", size = 3, stroke = 1) +
+  geom_hline(yintercept = 0, color = "grey40") +
+  geom_vline(xintercept = 0, color = "grey40") +
+  labs(x = "Log-fold change in RNAseq",
+       y = "Log-fold change in qPCR") +
+  theme_minimal(base_size = 14) +
+  theme(panel.grid.minor = element_blank()) +
+  ggpubr::stat_cor(method = "pearson", size = 4, color = "grey40",
+                   label.x.npc = 0.38, label.y.npc = 0.99)
 ```
+
+## Suppl. Fig. 2: GO plots
+
+### Panel A: Tissues separately at 6 hpm
+
+```{r, fig.height=7}
+go_main |>
+  filter(DE_direction == "both", time == "6 hpm") |>
+  cdotplot(facet_var1 = "ontology", facet_var2 = "tissue",
+           fill_var = "padj_log", ylab_size = 7, point_size = 4.5,
+           add_cat_id = TRUE) +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = expansion(mult = c(0.005, 0.075)))
+```
+
+### Panel B: Tissues separately at 24 hpm
+
+```{r}
+go_main |>
+  filter(DE_direction == "both", time == "24 hpm") |>
+  cdotplot(facet_var1 = "ontology", facet_var2 = "tissue",
+           fill_var = "padj_log", ylab_size = 9, add_cat_id = TRUE) +
+  scale_y_continuous(limits = c(0, NA),
+                     breaks = c(0, 3, 6, 9),
+                     expand = expansion(mult = c(0.005, 0.075)))
+```
+
+### Panel C: 3% tissues combined
+
+```{r, fig.height=7}
+go_time |>
+  filter(DE_direction == "both") |>
+  cdotplot(facet_var1 = "ontology", facet_var2 = "contrast",
+           fill_var = "padj_log", ylab_size = 7, point_size = 4.5,
+           add_cat_id = TRUE) +
+  scale_y_continuous(limits = c(0, NA),
+                     breaks = c(0, 3, 6, 9),
+                     expand = expansion(mult = c(0.005, 0.075)))
+```
+
+<br>
